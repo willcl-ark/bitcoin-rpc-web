@@ -27,7 +27,13 @@
         pkgs:
         let
           craneLib = crane.mkLib pkgs;
-          src = craneLib.cleanCargoSource ./.;
+          src = pkgs.lib.cleanSourceWith {
+            src = ./.;
+            filter = path: type:
+              (craneLib.filterCargoSources path type)
+              || (builtins.match ".*/web/.*" path != null)
+              || (builtins.match ".*/assets/.*" path != null);
+          };
           commonArgs = {
             inherit src;
             nativeBuildInputs =
