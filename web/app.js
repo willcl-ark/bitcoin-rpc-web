@@ -7,10 +7,12 @@ async function init() {
   const resp = await fetch("/openrpc.json");
   schema = await resp.json();
   loadConfig();
-  pushConfig();
+  await pushConfig();
+  await loadWallets();
   renderSidebar();
   document.getElementById("search").addEventListener("input", filterMethods);
-  document.getElementById("cfg-connect").addEventListener("click", saveAndPushConfig);
+  document.getElementById("cfg-connect").addEventListener("click", connectClicked);
+  document.getElementById("cfg-wallet").addEventListener("change", walletChanged);
   document.getElementById("execute").addEventListener("click", execute);
 }
 
@@ -22,6 +24,7 @@ function loadConfig() {
     if (cfg.url) document.getElementById("cfg-url").value = cfg.url;
     if (cfg.user) document.getElementById("cfg-user").value = cfg.user;
     if (cfg.password) document.getElementById("cfg-password").value = cfg.password;
+    if (cfg.wallet) document.getElementById("cfg-wallet").value = cfg.wallet;
   } catch (_) {}
 }
 
@@ -30,17 +33,45 @@ function getConfig() {
     url: document.getElementById("cfg-url").value,
     user: document.getElementById("cfg-user").value,
     password: document.getElementById("cfg-password").value,
+    wallet: document.getElementById("cfg-wallet").value,
   };
 }
 
-function saveAndPushConfig() {
-  const cfg = getConfig();
-  localStorage.setItem("rpc-config", JSON.stringify(cfg));
-  pushConfig();
+function saveConfig() {
+  localStorage.setItem("rpc-config", JSON.stringify(getConfig()));
 }
 
 async function pushConfig() {
   await fetch("/config?" + encodeURIComponent(JSON.stringify(getConfig())));
+}
+
+async function connectClicked() {
+  saveConfig();
+  await pushConfig();
+  await loadWallets();
+}
+
+async function walletChanged() {
+  saveConfig();
+  await pushConfig();
+}
+
+async function loadWallets() {
+  const select = document.getElementById("cfg-wallet");
+  const current = select.value;
+  try {
+    const resp = await rpcCall("listwallets", []);
+    const wallets = resp.result;
+    if (!Array.isArray(wallets)) return;
+    select.innerHTML = '<option value="">(none)</option>';
+    for (const w of wallets) {
+      const opt = document.createElement("option");
+      opt.value = w;
+      opt.textContent = w;
+      select.appendChild(opt);
+    }
+    select.value = current;
+  } catch (_) {}
 }
 
 function renderSidebar() {

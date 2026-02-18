@@ -16,6 +16,7 @@ struct RpcConfig {
     url: String,
     user: String,
     password: String,
+    wallet: String,
 }
 
 fn json_response(body: &str) -> Response<Cow<'static, [u8]>> {
@@ -63,10 +64,15 @@ fn do_rpc(body: &str, config: &Arc<Mutex<RpcConfig>>) -> String {
     dbg_log!("[rpc] method={method} params={params}");
 
     let cfg = config.lock().unwrap();
-    let url = cfg.url.clone();
+    let mut url = cfg.url.clone();
     let user = cfg.user.clone();
     let password = cfg.password.clone();
+    let wallet = cfg.wallet.clone();
     drop(cfg);
+
+    if !wallet.is_empty() {
+        url = format!("{url}/wallet/{wallet}");
+    }
 
     dbg_log!("[rpc] POST {url} (user={user:?})");
 
@@ -123,7 +129,10 @@ fn update_config(body: &str, config: &Arc<Mutex<RpcConfig>>) {
     if let Some(password) = msg["password"].as_str() {
         cfg.password = password.into();
     }
-    dbg_log!("[config] updated: url={:?} user={:?}", cfg.url, cfg.user);
+    if let Some(wallet) = msg["wallet"].as_str() {
+        cfg.wallet = wallet.into();
+    }
+    dbg_log!("[config] updated: url={:?} user={:?} wallet={:?}", cfg.url, cfg.user, cfg.wallet);
 }
 
 fn basic_auth(user: &str, password: &str) -> String {
@@ -237,6 +246,7 @@ fn main() {
         url: "http://127.0.0.1:8332".into(),
         user: String::new(),
         password: String::new(),
+        wallet: String::new(),
     }));
 
     dbg_log!("[main] building webview");
@@ -298,6 +308,7 @@ fn main() {
             url: "http://127.0.0.1:8332".into(),
             user: String::new(),
             password: String::new(),
+            wallet: String::new(),
         })),
     };
     event_loop.run_app(&mut app).unwrap();
