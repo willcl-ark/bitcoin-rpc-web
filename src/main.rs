@@ -4,9 +4,14 @@ use std::sync::{Arc, Mutex};
 use wry::http::header::{ACCESS_CONTROL_ALLOW_ORIGIN, CONTENT_TYPE};
 use wry::http::Response;
 
+fn log_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var_os("RUST_LOG").is_some())
+}
+
 macro_rules! dbg_log {
     ($($arg:tt)*) => {
-        if cfg!(debug_assertions) {
+        if log_enabled() {
             eprintln!($($arg)*);
         }
     };
