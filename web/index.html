@@ -9,12 +9,19 @@
 <body>
   <div id="layout">
     <aside id="sidebar">
-      <div id="config">
-        <h3>Connection</h3>
+      <div id="sidebar-header">
+        <span id="connection-status" title="Disconnected"></span>
+        <span id="header-title">Bitcoin Core RPC</span>
+        <button id="cfg-toggle" title="Settings">&#9881;</button>
+      </div>
+      <div id="config" class="collapsed">
         <label>URL <input id="cfg-url" type="text" value="http://127.0.0.1:8332"></label>
         <label>User <input id="cfg-user" type="text"></label>
         <label>Password <input id="cfg-password" type="password"></label>
-        <label>Wallet <select id="cfg-wallet"><option value="">(none)</option></select></label>
+        <label class="checkbox-label"><input id="cfg-save-pw" type="checkbox"> Save password</label>
+        <label>Wallet
+          <select id="cfg-wallet"><option value="">(none)</option></select>
+        </label>
         <button id="cfg-connect">Connect</button>
       </div>
       <input id="search" type="text" placeholder="Filter methods...">

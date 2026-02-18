@@ -8,9 +8,11 @@ async function init() {
   schema = await resp.json();
   loadConfig();
   await pushConfig();
-  await loadWallets();
+  const ok = await loadWallets();
+  updateStatus(ok);
   renderSidebar();
   document.getElementById("search").addEventListener("input", filterMethods);
+  document.getElementById("cfg-toggle").addEventListener("click", toggleConfig);
   document.getElementById("cfg-connect").addEventListener("click", connectClicked);
   document.getElementById("cfg-wallet").addEventListener("change", walletChanged);
   document.getElementById("execute").addEventListener("click", execute);
@@ -23,7 +25,10 @@ function loadConfig() {
     const cfg = JSON.parse(saved);
     if (cfg.url) document.getElementById("cfg-url").value = cfg.url;
     if (cfg.user) document.getElementById("cfg-user").value = cfg.user;
-    if (cfg.password) document.getElementById("cfg-password").value = cfg.password;
+    if (cfg.password) {
+      document.getElementById("cfg-password").value = cfg.password;
+      document.getElementById("cfg-save-pw").checked = true;
+    }
     if (cfg.wallet) document.getElementById("cfg-wallet").value = cfg.wallet;
   } catch (_) {}
 }
@@ -38,17 +43,29 @@ function getConfig() {
 }
 
 function saveConfig() {
-  localStorage.setItem("rpc-config", JSON.stringify(getConfig()));
+  const cfg = getConfig();
+  const savePw = document.getElementById("cfg-save-pw").checked;
+  if (!savePw) {
+    const { password, ...safe } = cfg;
+    localStorage.setItem("rpc-config", JSON.stringify(safe));
+  } else {
+    localStorage.setItem("rpc-config", JSON.stringify(cfg));
+  }
 }
 
 async function pushConfig() {
   await fetch("/config?" + encodeURIComponent(JSON.stringify(getConfig())));
 }
 
+function toggleConfig() {
+  document.getElementById("config").classList.toggle("collapsed");
+}
+
 async function connectClicked() {
   saveConfig();
   await pushConfig();
-  await loadWallets();
+  const ok = await loadWallets();
+  updateStatus(ok);
 }
 
 async function walletChanged() {
@@ -61,8 +78,9 @@ async function loadWallets() {
   const current = select.value;
   try {
     const resp = await rpcCall("listwallets", []);
+    if (resp.error) return false;
     const wallets = resp.result;
-    if (!Array.isArray(wallets)) return;
+    if (!Array.isArray(wallets)) return false;
     select.innerHTML = '<option value="">(none)</option>';
     for (const w of wallets) {
       const opt = document.createElement("option");
@@ -71,7 +89,16 @@ async function loadWallets() {
       select.appendChild(opt);
     }
     select.value = current;
-  } catch (_) {}
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function updateStatus(connected) {
+  const dot = document.getElementById("connection-status");
+  dot.classList.toggle("connected", connected);
+  dot.title = connected ? "Connected" : "Disconnected";
 }
 
 function renderSidebar() {
@@ -87,7 +114,7 @@ function renderSidebar() {
 
   for (const cat of Object.keys(groups).sort()) {
     const details = document.createElement("details");
-    details.open = true;
+    details.open = false;
     const summary = document.createElement("summary");
     summary.textContent = `${cat} (${groups[cat].length})`;
     details.appendChild(summary);
