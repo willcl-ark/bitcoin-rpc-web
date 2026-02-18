@@ -110,8 +110,20 @@ fn do_rpc(body: &str, config: &Arc<Mutex<RpcConfig>>) -> String {
     result
 }
 
+fn redact_password(body: &str) -> String {
+    match serde_json::from_str::<serde_json::Value>(body) {
+        Ok(mut v) => {
+            if v.get("password").is_some() {
+                v["password"] = serde_json::Value::String("*****".into());
+            }
+            v.to_string()
+        }
+        Err(_) => body.to_string(),
+    }
+}
+
 fn update_config(body: &str, config: &Arc<Mutex<RpcConfig>>) {
-    dbg_log!("[config] body: {body:?}");
+    dbg_log!("[config] body: {:?}", redact_password(body));
     let msg: serde_json::Value = match serde_json::from_str(body) {
         Ok(v) => v,
         Err(e) => {
@@ -210,7 +222,7 @@ fn build_webview(config: Arc<Mutex<RpcConfig>>) -> wry::WebViewBuilder<'static> 
 
             if path == "/config" {
                 let body = percent_decode(&query);
-                dbg_log!("[proto] /config body: {:?}", &body[..body.len().min(200)]);
+                dbg_log!("[proto] /config body: {:?}", redact_password(&body));
                 update_config(&body, &cfg);
                 responder.respond(json_response(r#"{"ok":true}"#));
                 return;
