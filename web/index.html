@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bitcoin Core RPC</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div id="layout">
+    <aside id="sidebar">
+      <div id="config">
+        <h3>Connection</h3>
+        <label>URL <input id="cfg-url" type="text" value="http://127.0.0.1:8332"></label>
+        <label>User <input id="cfg-user" type="text"></label>
+        <label>Password <input id="cfg-password" type="password"></label>
+        <button id="cfg-connect">Connect</button>
+      </div>
+      <input id="search" type="text" placeholder="Filter methods...">
+      <nav id="method-list"></nav>
+    </aside>
+    <main id="main">
+      <div id="empty-state">Select a method from the sidebar</div>
+      <div id="method-view" hidden>
+        <h2 id="method-name"></h2>
+        <p id="method-desc"></p>
+        <form id="param-form"></form>
+        <button id="execute">Execute</button>
+        <pre id="result"></pre>
+      </div>
+    </main>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>

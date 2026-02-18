@@ -1,0 +1,13 @@
+[package]
+name = "bitcoin-rpc-web"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+wry = "0.53"
+winit = "0.30"
+ureq = { version = "3", features = ["json"] }
+serde_json = "1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
