@@ -17,6 +17,9 @@ pub struct ThreadPool {
     sender: mpsc::Sender<Message>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct EnqueueError;
+
 impl ThreadPool {
     pub fn new(size: usize) -> Arc<Self> {
         assert!(size > 0, "thread pool size must be greater than zero");
@@ -47,21 +50,27 @@ impl ThreadPool {
         Arc::new(Self { workers, sender })
     }
 
-    pub fn execute<F>(&self, f: F) -> Result<(), ()>
+    pub fn execute<F>(&self, f: F) -> Result<(), EnqueueError>
     where
         F: FnOnce() + Send + 'static,
     {
-        self.sender.send(Message::Run(Box::new(f))).map_err(|_| ())
+        self.sender
+            .send(Message::Run(Box::new(f)))
+            .map_err(|_| EnqueueError)
     }
 }
 
 impl Drop for ThreadPool {
     fn drop(&mut self) {
+        let current_thread_id = thread::current().id();
         for _ in &self.workers {
             let _ = self.sender.send(Message::Shutdown);
         }
         for worker in &mut self.workers {
             if let Some(handle) = worker.handle.take() {
+                if handle.thread().id() == current_thread_id {
+                    continue;
+                }
                 let _ = handle.join();
             }
         }
