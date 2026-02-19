@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 mod music;
 mod protocol;
 mod rpc;
+mod rpc_limiter;
 mod zmq;
 
 #[cfg(target_os = "linux")]
@@ -23,13 +24,15 @@ fn main() {
     window.add(&vbox);
 
     let config = Arc::new(Mutex::new(rpc::RpcConfig::default()));
+    let rpc_limiter = rpc_limiter::RpcLimiter::new(8);
     let music_runtime = Arc::new(music::start_music());
     let zmq_state = Arc::new(Mutex::new(zmq::ZmqState::default()));
     let zmq_handle = Arc::new(Mutex::new(None));
 
-    let _webview = protocol::build_webview(config, music_runtime, zmq_state, zmq_handle)
-        .build_gtk(&vbox)
-        .unwrap();
+    let _webview =
+        protocol::build_webview(config, rpc_limiter, music_runtime, zmq_state, zmq_handle)
+            .build_gtk(&vbox)
+            .unwrap();
 
     window.connect_delete_event(|_, _| {
         gtk::main_quit();
@@ -45,6 +48,7 @@ struct App {
     window: Option<winit::window::Window>,
     webview: Option<wry::WebView>,
     config: Arc<Mutex<rpc::RpcConfig>>,
+    rpc_limiter: Arc<rpc_limiter::RpcLimiter>,
     music_runtime: Arc<music::MusicRuntime>,
     zmq_state: Arc<Mutex<zmq::ZmqState>>,
     zmq_handle: Arc<Mutex<Option<zmq::ZmqHandle>>>,
@@ -57,6 +61,7 @@ impl winit::application::ApplicationHandler for App {
         let window = event_loop.create_window(attrs).unwrap();
         let webview = protocol::build_webview(
             Arc::clone(&self.config),
+            Arc::clone(&self.rpc_limiter),
             Arc::clone(&self.music_runtime),
             Arc::clone(&self.zmq_state),
             Arc::clone(&self.zmq_handle),
@@ -86,6 +91,7 @@ fn main() {
         window: None,
         webview: None,
         config: Arc::new(Mutex::new(rpc::RpcConfig::default())),
+        rpc_limiter: rpc_limiter::RpcLimiter::new(8),
         music_runtime: Arc::new(music::start_music()),
         zmq_state: Arc::new(Mutex::new(zmq::ZmqState::default())),
         zmq_handle: Arc::new(Mutex::new(None)),

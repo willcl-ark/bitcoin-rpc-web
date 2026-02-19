@@ -6,10 +6,12 @@ use wry::http::header::{ACCESS_CONTROL_ALLOW_ORIGIN, CONTENT_TYPE};
 
 use crate::music;
 use crate::rpc::{self, RpcConfig};
+use crate::rpc_limiter::RpcLimiter;
 use crate::zmq::{self, ZmqHandle, ZmqState};
 
 pub fn build_webview(
     config: Arc<Mutex<RpcConfig>>,
+    rpc_limiter: Arc<RpcLimiter>,
     music_runtime: Arc<music::MusicRuntime>,
     zmq_state: Arc<Mutex<ZmqState>>,
     zmq_handle: Arc<Mutex<Option<ZmqHandle>>>,
@@ -22,11 +24,18 @@ pub fn build_webview(
 
             if path == "/rpc" {
                 let body = percent_decode(&query);
-                let cfg = Arc::clone(&cfg);
-                std::thread::spawn(move || {
-                    let result = rpc::do_rpc(&body, &cfg);
-                    responder.respond(json_response(&result));
-                });
+                if let Some(permit) = rpc_limiter.try_acquire() {
+                    let cfg = Arc::clone(&cfg);
+                    std::thread::spawn(move || {
+                        let _permit = permit;
+                        let result = rpc::do_rpc(&body, &cfg);
+                        responder.respond(json_response(&result));
+                    });
+                } else {
+                    responder.respond(json_response(
+                        r#"{"error":"rpc worker pool saturated; try again"}"#,
+                    ));
+                }
                 return;
             }
 
