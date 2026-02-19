@@ -85,9 +85,10 @@ body {
 #config {
   padding: 10px 12px;
   border-bottom: 1px solid #30363d;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   transition: max-height 0.2s, padding 0.2s, opacity 0.15s;
-  max-height: 400px;
+  max-height: calc(100vh - 160px);
   opacity: 1;
 }
 
