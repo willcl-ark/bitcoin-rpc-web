@@ -49,7 +49,7 @@ pub fn do_rpc(body: &str, config: &Arc<Mutex<RpcConfig>>) -> String {
         Ok(v) => v,
         Err(e) => {
             warn!(error = %e, "rpc request JSON parse failed");
-            return format!(r#"{{"error":"{e}"}}"#);
+            return json_error(e.to_string());
         }
     };
 
@@ -90,9 +90,13 @@ pub fn do_rpc(body: &str, config: &Arc<Mutex<RpcConfig>>) -> String {
         }
         Err(e) => {
             warn!(method, error = %e, "rpc transport error");
-            format!(r#"{{"error":"{}"}}"#, e)
+            json_error(e.to_string())
         }
     }
+}
+
+fn json_error(message: String) -> String {
+    serde_json::json!({ "error": message }).to_string()
 }
 
 fn rpc_agent() -> &'static ureq::Agent {
@@ -243,7 +247,8 @@ fn parse_usize(value: &serde_json::Value) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::{
-        MAX_ZMQ_BUFFER_LIMIT, MIN_ZMQ_BUFFER_LIMIT, RpcConfig, is_safe_rpc_host, update_config,
+        MAX_ZMQ_BUFFER_LIMIT, MIN_ZMQ_BUFFER_LIMIT, RpcConfig, is_safe_rpc_host, json_error,
+        update_config,
     };
     use std::sync::{Arc, Mutex};
 
@@ -282,5 +287,12 @@ mod tests {
 
         update_config(r#"{"zmq_buffer_limit":200000}"#, &cfg);
         assert_eq!(cfg.lock().unwrap().zmq_buffer_limit, MAX_ZMQ_BUFFER_LIMIT);
+    }
+
+    #[test]
+    fn error_json_is_valid_and_escaped() {
+        let out = json_error("bad \"quote\"\nline".to_string());
+        let v: serde_json::Value = serde_json::from_str(&out).expect("valid JSON error envelope");
+        assert_eq!(v["error"].as_str(), Some("bad \"quote\"\nline"));
     }
 }
