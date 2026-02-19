@@ -25,7 +25,7 @@ pub fn build_webview(
             debug!(method = %req.method(), path, query_bytes = query.len(), "protocol request");
 
             if path == "/rpc" {
-                let body = percent_decode(&query);
+                let body = request_body(&req, &query);
                 if let Some(permit) = rpc_limiter.try_acquire() {
                     let cfg = Arc::clone(&cfg);
                     std::thread::spawn(move || {
@@ -43,7 +43,7 @@ pub fn build_webview(
             }
 
             if path == "/config" {
-                let body = percent_decode(&query);
+                let body = request_body(&req, &query);
                 let result = rpc::update_config(&body, &cfg);
                 if result.zmq_changed {
                     let mut handle = zmq_handle.lock().unwrap();
@@ -161,4 +161,20 @@ fn percent_decode(input: &str) -> String {
         i += 1;
     }
     String::from_utf8_lossy(&out).to_string()
+}
+
+fn request_body(req: &wry::http::Request<Vec<u8>>, query: &str) -> String {
+    if req.method() == wry::http::Method::POST {
+        if let Some(encoded) = req.headers().get("x-app-json").and_then(|v| v.to_str().ok()) {
+            let decoded = percent_decode(encoded);
+            if !decoded.is_empty() {
+                return decoded;
+            }
+        }
+        let body = req.body();
+        if !body.is_empty() {
+            return String::from_utf8_lossy(body).to_string();
+        }
+    }
+    percent_decode(query)
 }

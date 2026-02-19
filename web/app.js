@@ -6,6 +6,10 @@ let dashInterval = null;
 let lastPeers = [];
 let audioEnabled = true;
 
+function encodeHeaderJson(value) {
+  return encodeURIComponent(JSON.stringify(value));
+}
+
 async function init() {
   const resp = await fetch("/openrpc.json");
   schema = await resp.json();
@@ -79,8 +83,16 @@ function saveConfig() {
 }
 
 async function pushConfig() {
+  const cfg = getConfig();
   try {
-    const resp = await fetch("/config?" + encodeURIComponent(JSON.stringify(getConfig())));
+    const resp = await fetch("/config", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-app-json": encodeHeaderJson(cfg),
+      },
+      body: JSON.stringify(cfg),
+    });
     return await resp.json();
   } catch (_) {
     return { ok: false };
@@ -329,7 +341,15 @@ async function execute() {
 }
 
 async function rpcCall(method, params) {
-  const resp = await fetch("/rpc?" + encodeURIComponent(JSON.stringify({ method, params })));
+  const payload = { method, params };
+  const resp = await fetch("/rpc", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-app-json": encodeHeaderJson(payload),
+    },
+    body: JSON.stringify(payload),
+  });
   return resp.json();
 }
 
