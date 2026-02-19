@@ -912,13 +912,16 @@ function renderZmq(data) {
   }
   section.hidden = false;
   const shouldFollowTail = isZmqFeedNearBottom(feed);
+  const previousScrollTop = feed.scrollTop;
   const messages = data.messages.length > ZMQ_FEED_MAX_ROWS
     ? data.messages.slice(data.messages.length - ZMQ_FEED_MAX_ROWS)
     : data.messages;
   const excess = feed.children.length + messages.length - ZMQ_FEED_MAX_ROWS;
+  let removedHeight = 0;
   for (let i = 0; i < excess; i++) {
     const stale = feed.firstElementChild;
     if (!stale) break;
+    removedHeight += stale.offsetHeight;
     if (stale.dataset.zmqId) zmqMessageLookup.delete(stale.dataset.zmqId);
     stale.remove();
   }
@@ -929,6 +932,8 @@ function renderZmq(data) {
   feed.appendChild(frag);
   if (shouldFollowTail) {
     feed.scrollTop = feed.scrollHeight;
+  } else if (removedHeight > 0) {
+    feed.scrollTop = Math.max(0, previousScrollTop - removedHeight);
   }
 }
 
