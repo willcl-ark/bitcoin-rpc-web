@@ -2,7 +2,6 @@ use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 
-use sha2::{Digest, Sha256};
 use tracing::{debug, warn};
 
 const DEFAULT_ZMQ_SOCKET_RCVHWM: i32 = 100_000;
@@ -13,7 +12,6 @@ pub struct ZmqMessage {
     pub cursor: u64,
     pub topic: String,
     pub body_hex: String,
-    pub body_full_hex: Option<String>,
     pub body_size: usize,
     pub sequence: u32,
     pub timestamp: u64,
@@ -81,7 +79,7 @@ pub fn start_zmq_subscriber(address: &str, state: Arc<ZmqSharedState>) -> ZmqHan
         } else {
             debug!(rcvhwm, "configured ZMQ subscriber rcvhwm");
         }
-        for topic in &["hashblock", "hashtx", "rawblock", "rawtx", "sequence"] {
+        for topic in &["hashblock", "hashtx"] {
             socket.set_subscribe(topic.as_bytes()).ok();
         }
 
@@ -115,16 +113,7 @@ pub fn start_zmq_subscriber(address: &str, state: Arc<ZmqSharedState>) -> ZmqHan
             let topic = String::from_utf8_lossy(&parts[0]).to_string();
             let body = &parts[1];
             let body_hex = hex_encode(&body[..body.len().min(80)]);
-            let body_full_hex = if topic == "rawtx" {
-                Some(hex_encode(body))
-            } else {
-                None
-            };
-            let event_hash = match topic.as_str() {
-                "hashblock" | "hashtx" => (body.len() >= 32).then(|| hash_from_notification(body)),
-                "rawblock" => (body.len() >= 80).then(|| block_hash_from_header(&body[..80])),
-                _ => None,
-            };
+            let event_hash = (body.len() >= 32).then(|| hash_from_notification(body));
             let body_size = body.len();
             let sequence = if parts[2].len() >= 4 {
                 u32::from_le_bytes([parts[2][0], parts[2][1], parts[2][2], parts[2][3]])
@@ -150,7 +139,6 @@ pub fn start_zmq_subscriber(address: &str, state: Arc<ZmqSharedState>) -> ZmqHan
                 cursor,
                 topic,
                 body_hex,
-                body_full_hex,
                 body_size,
                 sequence,
                 timestamp,
@@ -187,14 +175,6 @@ fn hex_encode(data: &[u8]) -> String {
 
 fn hash_from_notification(bytes: &[u8]) -> String {
     hex_encode(&bytes[..32])
-}
-
-fn block_hash_from_header(header: &[u8]) -> String {
-    let first = Sha256::digest(header);
-    let second = Sha256::digest(first);
-    let mut hash = second.to_vec();
-    hash.reverse();
-    hex_encode(&hash)
 }
 
 fn mark_disconnected(state: &mut ZmqState) {

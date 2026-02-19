@@ -95,39 +95,6 @@ pub fn build_webview(
                 return;
             }
 
-            if path == "/zmq/decode-rawtx" {
-                let timestamp = query_param_u64(&query, "timestamp");
-                let sequence = query_param_u64(&query, "sequence");
-                let result = if let (Some(timestamp), Some(sequence)) = (timestamp, sequence) {
-                    let raw_hex = {
-                        let s = zmq_state.state.lock().unwrap();
-                        s.messages
-                            .iter()
-                            .rev()
-                            .find(|m| {
-                                m.topic == "rawtx"
-                                    && m.timestamp == timestamp
-                                    && m.sequence as u64 == sequence
-                            })
-                            .and_then(|m| m.body_full_hex.as_deref())
-                            .map(str::to_owned)
-                    };
-                    if let Some(raw_hex) = raw_hex {
-                        let body = serde_json::json!({
-                            "method": "decoderawtransaction",
-                            "params": [raw_hex],
-                        });
-                        rpc::do_rpc(&body.to_string(), &cfg)
-                    } else {
-                        r#"{"error":"rawtx message not found"}"#.to_string()
-                    }
-                } else {
-                    r#"{"error":"invalid rawtx selector"}"#.to_string()
-                };
-                responder.respond(json_response(&result));
-                return;
-            }
-
             if path == "/zmq/messages" {
                 let since = query_param_u64(&query, "since").unwrap_or(0);
                 let wait_ms = query_param_u64(&query, "wait_ms")

@@ -467,10 +467,10 @@ function queueDashboardPartRefresh(parts) {
 function deriveDashboardParts(messages) {
   const parts = new Set();
   for (const msg of messages) {
-    if (msg.topic === "hashblock" || msg.topic === "rawblock") {
+    if (msg.topic === "hashblock") {
       parts.add("chain");
       parts.add("mempool");
-    } else if (msg.topic === "hashtx" || msg.topic === "rawtx" || msg.topic === "sequence") {
+    } else if (msg.topic === "hashtx") {
       parts.add("mempool");
     }
   }
@@ -928,8 +928,8 @@ function formatUnixTime(secs) {
 }
 
 function zmqTopicClass(topic) {
-  if (topic === "hashblock" || topic === "rawblock") return "zmq-topic-block";
-  if (topic === "hashtx" || topic === "rawtx") return "zmq-topic-tx";
+  if (topic === "hashblock") return "zmq-topic-block";
+  if (topic === "hashtx") return "zmq-topic-tx";
   return "zmq-topic-meta";
 }
 
@@ -947,21 +947,6 @@ function zmqRowAction(msg) {
       title: `ZMQ hashtx ${hash}`,
       description: "Triggered by ZMQ hashtx. RPC: getrawtransaction <hash> 1",
       run: () => rpcCall("getrawtransaction", [hash, 1]),
-    };
-  }
-  if (msg.topic === "rawblock" && hash) {
-    return {
-      title: `ZMQ rawblock ${hash}`,
-      description: "Triggered by ZMQ rawblock. RPC: getblock <hash> 1",
-      run: () => rpcCall("getblock", [hash, 1]),
-    };
-  }
-  if (msg.topic === "rawtx") {
-    const qs = `timestamp=${encodeURIComponent(String(msg.timestamp))}&sequence=${encodeURIComponent(String(msg.sequence))}`;
-    return {
-      title: `ZMQ rawtx seq=${msg.sequence}`,
-      description: "Triggered by ZMQ rawtx. RPC: decoderawtransaction <rawtx>",
-      run: () => fetch(`/zmq/decode-rawtx?${qs}`).then((r) => r.json()),
     };
   }
   return null;
@@ -995,8 +980,6 @@ function buildZmqRow(msg) {
   let dataHtml;
   if (msg.event_hash) {
     dataHtml = esc(msg.event_hash);
-  } else if (topic === "rawblock" || topic === "rawtx") {
-    dataHtml = esc(formatBytes(msg.body_size));
   } else {
     dataHtml = esc(msg.body_hex);
   }

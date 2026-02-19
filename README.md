@@ -14,7 +14,7 @@ A lightweight desktop GUI for interacting with Bitcoin Core's JSON-RPC interface
 - Live dashboard with blockchain, mempool, network, traffic, and peer cards
   - Clickable peer rows with full `getpeerinfo` detail view
   - Color-coded peer direction (green outbound, orange inbound)
-- Live ZMQ event feed showing `hashblock`, `hashtx`, `rawblock`, `rawtx`, and `sequence` notifications with hue-mapped hex byte coloring
+- Live ZMQ event feed showing `hashblock` and `hashtx` notifications with hue-mapped hex byte coloring
 - RPC address validation — blocks non-local RPC connections by default (see [Remote RPC](#remote-rpc))
 - Built-in tracker music player for extra fun while crafting transactions
 
@@ -56,9 +56,6 @@ To enable the live ZMQ event feed, Bitcoin Core must be started with ZMQ notific
 ```
 zmqpubhashblock=tcp://0.0.0.0:29000
 zmqpubhashtx=tcp://0.0.0.0:29000
-zmqpubrawblock=tcp://0.0.0.0:29000
-zmqpubrawtx=tcp://0.0.0.0:29000
-zmqpubsequence=tcp://0.0.0.0:29000
 ```
 
 Use `127.0.0.1` instead of `0.0.0.0` if you only need local access. Then enter the ZMQ address (e.g. `tcp://127.0.0.1:29000`) in the config panel and press Connect. The ZMQ Events card will appear on the dashboard once messages arrive.
