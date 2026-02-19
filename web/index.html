@@ -31,6 +31,7 @@
         <label>Wallet
           <select id="cfg-wallet"><option value="">(none)</option></select>
         </label>
+        <label>ZMQ address <input id="cfg-zmq" type="text" placeholder="tcp://127.0.0.1:28332"></label>
         <button id="cfg-connect">Connect</button>
       </div>
       <input id="search" type="text" placeholder="Filter methods...">
@@ -57,6 +58,10 @@
               <thead><tr><th>Address</th><th>Client</th><th>Dir</th><th>Ping</th></tr></thead>
               <tbody></tbody>
             </table>
+          </section>
+          <section id="dash-zmq" class="dash-card" hidden>
+            <h3>ZMQ Events</h3>
+            <div id="dash-zmq-feed"></div>
           </section>
         </div>
       </div>

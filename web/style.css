@@ -87,7 +87,7 @@ body {
   border-bottom: 1px solid #30363d;
   overflow: hidden;
   transition: max-height 0.2s, padding 0.2s, opacity 0.15s;
-  max-height: 350px;
+  max-height: 400px;
   opacity: 1;
 }
 
@@ -338,12 +338,66 @@ body {
   background: #1c2128;
 }
 
+#dash-zmq {
+  grid-column: 1 / -1;
+}
+
+#dash-zmq-feed {
+  max-height: 300px;
+  overflow-y: auto;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 12px;
+}
+
+#dash-zmq-feed::-webkit-scrollbar {
+  width: 6px;
+}
+
+#dash-zmq-feed::-webkit-scrollbar-thumb {
+  background: #30363d;
+  border-radius: 3px;
+}
+
+.zmq-row {
+  padding: 3px 0;
+  display: flex;
+  gap: 10px;
+}
+
+.zmq-time {
+  color: #6e7681;
+  flex-shrink: 0;
+}
+
+.zmq-topic {
+  flex-shrink: 0;
+}
+
+.zmq-topic-block {
+  color: #f0883e;
+}
+
+.zmq-topic-tx {
+  color: #58a6ff;
+}
+
+.zmq-topic-meta {
+  color: #8b949e;
+}
+
+.zmq-data {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 @media (max-width: 800px) {
   #dash-grid {
     grid-template-columns: 1fr;
   }
 
-  #dash-peers {
+  #dash-peers,
+  #dash-zmq {
     grid-column: auto;
   }
 }

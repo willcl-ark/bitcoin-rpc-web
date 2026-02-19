@@ -38,6 +38,7 @@ function loadConfig() {
     }
     if (cfg.wallet) document.getElementById("cfg-wallet").value = cfg.wallet;
     if (cfg.pollInterval) document.getElementById("cfg-poll-interval").value = cfg.pollInterval;
+    if (cfg.zmq_address) document.getElementById("cfg-zmq").value = cfg.zmq_address;
   } catch (_) {}
 }
 
@@ -48,6 +49,7 @@ function getConfig() {
     password: document.getElementById("cfg-password").value,
     wallet: document.getElementById("cfg-wallet").value,
     pollInterval: document.getElementById("cfg-poll-interval").value,
+    zmq_address: document.getElementById("cfg-zmq").value,
   };
 }
 
@@ -305,6 +307,7 @@ function startDashboardPolling() {
   fetchDashboard();
   const ms = Number(document.getElementById("cfg-poll-interval").value) * 1000;
   dashInterval = setInterval(fetchDashboard, ms);
+  startZmqPolling();
 }
 
 function stopDashboardPolling() {
@@ -312,6 +315,7 @@ function stopDashboardPolling() {
     clearInterval(dashInterval);
     dashInterval = null;
   }
+  stopZmqPolling();
 }
 
 async function fetchDashboard() {
@@ -407,6 +411,90 @@ function renderPeers(peers) {
     html += "</tr>";
   }
   tbody.innerHTML = html;
+}
+
+// --- ZMQ feed ---
+
+let zmqInterval = null;
+
+function startZmqPolling() {
+  stopZmqPolling();
+  fetchZmq();
+  zmqInterval = setInterval(fetchZmq, 2000);
+}
+
+function stopZmqPolling() {
+  if (zmqInterval) {
+    clearInterval(zmqInterval);
+    zmqInterval = null;
+  }
+}
+
+async function fetchZmq() {
+  try {
+    const resp = await fetch("/zmq/messages");
+    const data = await resp.json();
+    renderZmq(data);
+  } catch (_) {
+    document.getElementById("dash-zmq").hidden = true;
+  }
+}
+
+function reverseHex(hex) {
+  return hex.match(/.{2}/g).reverse().join("");
+}
+
+function formatUnixTime(secs) {
+  const d = new Date(secs * 1000);
+  return d.toTimeString().slice(0, 8);
+}
+
+function colorHexBytes(hex) {
+  let html = "";
+  for (let i = 0; i < hex.length; i += 2) {
+    const pair = hex.slice(i, i + 2);
+    const val = parseInt(pair, 16);
+    const hue = Math.round(val * 360 / 256);
+    html += '<span style="color:hsl(' + hue + ',70%,65%)">' + esc(pair) + '</span>';
+  }
+  return html;
+}
+
+function zmqTopicClass(topic) {
+  if (topic === "hashblock" || topic === "rawblock") return "zmq-topic-block";
+  if (topic === "hashtx" || topic === "rawtx") return "zmq-topic-tx";
+  return "zmq-topic-meta";
+}
+
+function renderZmq(data) {
+  const section = document.getElementById("dash-zmq");
+  if (!data.connected || data.messages.length === 0) {
+    section.hidden = true;
+    return;
+  }
+  section.hidden = false;
+  const feed = document.getElementById("dash-zmq-feed");
+  let html = "";
+  for (let i = data.messages.length - 1; i >= 0; i--) {
+    const msg = data.messages[i];
+    const time = formatUnixTime(msg.timestamp);
+    const topic = msg.topic;
+    const topicCls = zmqTopicClass(topic);
+    let dataHtml;
+    if (topic === "hashblock" || topic === "hashtx") {
+      dataHtml = colorHexBytes(reverseHex(msg.body_hex));
+    } else if (topic === "rawblock" || topic === "rawtx") {
+      dataHtml = esc(formatBytes(msg.body_size));
+    } else {
+      dataHtml = colorHexBytes(msg.body_hex);
+    }
+    html += '<div class="zmq-row">'
+      + '<span class="zmq-time">' + esc(time) + '</span>'
+      + '<span class="zmq-topic ' + topicCls + '">' + esc(topic) + '</span>'
+      + '<span class="zmq-data">' + dataHtml + '</span>'
+      + '</div>';
+  }
+  feed.innerHTML = html;
 }
 
 // --- Music player ---
