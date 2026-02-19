@@ -1,524 +1,9 @@
-use std::borrow::Cow;
-use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use wry::http::Response;
-use wry::http::header::{ACCESS_CONTROL_ALLOW_ORIGIN, CONTENT_TYPE};
-
 mod music;
-
-fn log_enabled() -> bool {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| std::env::var_os("RUST_LOG").is_some())
-}
-
-fn allow_insecure() -> bool {
-    static ALLOWED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ALLOWED.get_or_init(|| {
-        std::env::var("DANGER_INSECURE_RPC")
-            .ok()
-            .map_or(false, |v| v == "1")
-    })
-}
-
-fn is_safe_rpc_host(url: &str) -> bool {
-    let host = match url.find("://") {
-        Some(i) => {
-            let after = &url[i + 3..];
-            let after = after.split('/').next().unwrap_or(after);
-            let after = after.split('?').next().unwrap_or(after);
-            // strip user:pass@
-            let after = after.rsplit('@').next().unwrap_or(after);
-            // strip port
-            if after.starts_with('[') {
-                // IPv6: [::1]:8332
-                after
-                    .trim_start_matches('[')
-                    .split(']')
-                    .next()
-                    .unwrap_or(after)
-            } else {
-                after.split(':').next().unwrap_or(after)
-            }
-        }
-        None => return false,
-    };
-
-    if host.eq_ignore_ascii_case("localhost") {
-        return true;
-    }
-
-    let octets: Vec<u8> = match host
-        .split('.')
-        .map(|s| s.parse::<u8>())
-        .collect::<Result<Vec<_>, _>>()
-    {
-        Ok(v) if v.len() == 4 => v,
-        _ => return false,
-    };
-
-    matches!(
-        (octets[0], octets[1]),
-        (127, _)              // loopback
-        | (10, _)             // RFC 1918
-        | (192, 168)          // RFC 1918
-        | (100, 64..=127) // CGNAT (WireGuard/Tailscale)
-    ) || (octets[0] == 172 && (16..=31).contains(&octets[1]))
-}
-
-macro_rules! dbg_log {
-    ($($arg:tt)*) => {
-        if log_enabled() {
-            eprintln!($($arg)*);
-        }
-    };
-}
-
-struct RpcConfig {
-    url: String,
-    user: String,
-    password: String,
-    wallet: String,
-    zmq_address: String,
-}
-
-fn json_response(body: &str) -> Response<Cow<'static, [u8]>> {
-    Response::builder()
-        .header(CONTENT_TYPE, "application/json")
-        .header(ACCESS_CONTROL_ALLOW_ORIGIN, "*")
-        .body(Cow::Owned(body.as_bytes().to_vec()))
-        .unwrap()
-}
-
-fn serve_asset(path: &str) -> Response<Cow<'static, [u8]>> {
-    let (mime, content): (&str, &[u8]) = match path {
-        "/" | "/index.html" => ("text/html", include_bytes!("../web/index.html")),
-        "/style.css" => ("text/css", include_bytes!("../web/style.css")),
-        "/app.js" => ("text/javascript", include_bytes!("../web/app.js")),
-        "/openrpc.json" => ("application/json", include_bytes!("../assets/openrpc.json")),
-        _ => {
-            dbg_log!("[asset] 404: {path}");
-            return Response::builder()
-                .status(404)
-                .body(Cow::Borrowed(b"Not found" as &[u8]))
-                .unwrap();
-        }
-    };
-    dbg_log!("[asset] 200 {path} ({mime}, {} bytes)", content.len());
-    Response::builder()
-        .header(CONTENT_TYPE, mime)
-        .header(ACCESS_CONTROL_ALLOW_ORIGIN, "*")
-        .body(Cow::Borrowed(content))
-        .unwrap()
-}
-
-fn do_rpc(body: &str, config: &Arc<Mutex<RpcConfig>>) -> String {
-    dbg_log!(
-        "[rpc] parsing body ({} bytes): {:?}",
-        body.len(),
-        &body[..body.len().min(200)]
-    );
-    let msg: serde_json::Value = match serde_json::from_str(body) {
-        Ok(v) => v,
-        Err(e) => {
-            dbg_log!("[rpc] JSON parse error: {e}");
-            return format!(r#"{{"error":"{e}"}}"#);
-        }
-    };
-
-    let method = msg["method"].as_str().unwrap_or("");
-    let params = &msg["params"];
-    dbg_log!("[rpc] method={method} params={params}");
-
-    let cfg = config.lock().unwrap();
-    let mut url = cfg.url.clone();
-    let user = cfg.user.clone();
-    let password = cfg.password.clone();
-    let wallet = cfg.wallet.clone();
-    drop(cfg);
-
-    if !wallet.is_empty() {
-        url = format!("{url}/wallet/{wallet}");
-    }
-
-    dbg_log!("[rpc] POST {url} (user={user:?})");
-
-    let envelope = serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": method,
-        "params": params,
-    });
-
-    let agent = ureq::Agent::config_builder()
-        .http_status_as_error(false)
-        .build()
-        .new_agent();
-
-    let payload = envelope.to_string();
-    let result = match agent
-        .post(&url)
-        .header("Authorization", &basic_auth(&user, &password))
-        .content_type("application/json")
-        .send(payload.as_bytes())
-    {
-        Ok(mut resp) => {
-            let status = resp.status();
-            let body = resp.body_mut().read_to_string().unwrap_or_default();
-            dbg_log!(
-                "[rpc] response HTTP {status} ({} bytes): {:?}",
-                body.len(),
-                &body[..body.len().min(200)]
-            );
-            body
-        }
-        Err(e) => {
-            dbg_log!("[rpc] request error: {e}");
-            format!(r#"{{"error":"{}"}}"#, e)
-        }
-    };
-
-    result
-}
-
-fn redact_password(body: &str) -> String {
-    match serde_json::from_str::<serde_json::Value>(body) {
-        Ok(mut v) => {
-            if v.get("password").is_some() {
-                v["password"] = serde_json::Value::String("*****".into());
-            }
-            v.to_string()
-        }
-        Err(_) => body.to_string(),
-    }
-}
-
-struct ConfigUpdateResult {
-    zmq_changed: bool,
-    insecure_blocked: bool,
-}
-
-fn update_config(body: &str, config: &Arc<Mutex<RpcConfig>>) -> ConfigUpdateResult {
-    dbg_log!("[config] body: {:?}", redact_password(body));
-    let msg: serde_json::Value = match serde_json::from_str(body) {
-        Ok(v) => v,
-        Err(e) => {
-            dbg_log!("[config] parse error: {e}");
-            return ConfigUpdateResult {
-                zmq_changed: false,
-                insecure_blocked: false,
-            };
-        }
-    };
-    let mut cfg = config.lock().unwrap();
-    let mut insecure_blocked = false;
-    if let Some(url) = msg["url"].as_str() {
-        if is_safe_rpc_host(url) || allow_insecure() {
-            cfg.url = url.into();
-        } else {
-            dbg_log!("[config] blocked non-local RPC URL: {url}");
-            insecure_blocked = true;
-        }
-    }
-    if let Some(user) = msg["user"].as_str() {
-        cfg.user = user.into();
-    }
-    if let Some(password) = msg["password"].as_str() {
-        cfg.password = password.into();
-    }
-    if let Some(wallet) = msg["wallet"].as_str() {
-        cfg.wallet = wallet.into();
-    }
-    let mut zmq_changed = false;
-    if let Some(addr) = msg["zmq_address"].as_str() {
-        if cfg.zmq_address != addr {
-            cfg.zmq_address = addr.into();
-            zmq_changed = true;
-        }
-    }
-    dbg_log!(
-        "[config] updated: url={:?} user={:?} wallet={:?} zmq={:?}",
-        cfg.url,
-        cfg.user,
-        cfg.wallet,
-        cfg.zmq_address
-    );
-    ConfigUpdateResult {
-        zmq_changed,
-        insecure_blocked,
-    }
-}
-
-fn basic_auth(user: &str, password: &str) -> String {
-    use std::io::Write;
-    let mut buf = Vec::new();
-    write!(buf, "{user}:{password}").unwrap();
-    format!("Basic {}", base64_encode(&buf))
-}
-
-fn base64_encode(data: &[u8]) -> String {
-    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::new();
-    for chunk in data.chunks(3) {
-        let b0 = chunk[0] as u32;
-        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
-        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
-        let triple = (b0 << 16) | (b1 << 8) | b2;
-        out.push(CHARS[(triple >> 18 & 0x3F) as usize] as char);
-        out.push(CHARS[(triple >> 12 & 0x3F) as usize] as char);
-        if chunk.len() > 1 {
-            out.push(CHARS[(triple >> 6 & 0x3F) as usize] as char);
-        } else {
-            out.push('=');
-        }
-        if chunk.len() > 2 {
-            out.push(CHARS[(triple & 0x3F) as usize] as char);
-        } else {
-            out.push('=');
-        }
-    }
-    out
-}
-
-fn percent_decode(input: &str) -> String {
-    let mut out = Vec::new();
-    let b = input.as_bytes();
-    let mut i = 0;
-    while i < b.len() {
-        if b[i] == b'%' && i + 2 < b.len() {
-            if let Ok(byte) =
-                u8::from_str_radix(std::str::from_utf8(&b[i + 1..i + 3]).unwrap_or(""), 16)
-            {
-                out.push(byte);
-                i += 3;
-                continue;
-            }
-        }
-        out.push(if b[i] == b'+' { b' ' } else { b[i] });
-        i += 1;
-    }
-    String::from_utf8_lossy(&out).to_string()
-}
-
-// --- ZMQ subscriber ---
-
-struct ZmqMessage {
-    topic: String,
-    body_hex: String,
-    body_size: usize,
-    sequence: u32,
-    timestamp: u64,
-}
-
-struct ZmqState {
-    connected: bool,
-    address: String,
-    messages: VecDeque<ZmqMessage>,
-}
-
-struct ZmqHandle {
-    shutdown: Arc<AtomicBool>,
-    thread: std::thread::JoinHandle<()>,
-}
-
-fn hex_encode(data: &[u8]) -> String {
-    use std::fmt::Write;
-    let mut s = String::with_capacity(data.len() * 2);
-    for &b in data {
-        write!(s, "{b:02x}").unwrap();
-    }
-    s
-}
-
-fn start_zmq_subscriber(address: &str, state: Arc<Mutex<ZmqState>>) -> ZmqHandle {
-    let shutdown = Arc::new(AtomicBool::new(false));
-    let flag = Arc::clone(&shutdown);
-    let addr = address.to_string();
-
-    let thread = std::thread::spawn(move || {
-        let ctx = zmq2::Context::new();
-        let socket = match ctx.socket(zmq2::SUB) {
-            Ok(s) => s,
-            Err(e) => {
-                dbg_log!("[zmq] failed to create socket: {e}");
-                return;
-            }
-        };
-
-        socket.set_rcvtimeo(500).ok();
-        for topic in &["hashblock", "hashtx", "rawblock", "rawtx", "sequence"] {
-            socket.set_subscribe(topic.as_bytes()).ok();
-        }
-
-        if let Err(e) = socket.connect(&addr) {
-            dbg_log!("[zmq] connect failed ({addr}): {e}");
-            return;
-        }
-
-        dbg_log!("[zmq] connected to {addr}");
-        state.lock().unwrap().connected = true;
-
-        while !flag.load(Ordering::Relaxed) {
-            let parts = match socket.recv_multipart(0) {
-                Ok(p) => p,
-                Err(zmq2::Error::EAGAIN) => continue,
-                Err(e) => {
-                    dbg_log!("[zmq] recv error: {e}");
-                    break;
-                }
-            };
-
-            if parts.len() < 3 {
-                continue;
-            }
-
-            let topic = String::from_utf8_lossy(&parts[0]).to_string();
-            let body = &parts[1];
-            let body_hex = hex_encode(&body[..body.len().min(80)]);
-            let body_size = body.len();
-            let sequence = if parts[2].len() >= 4 {
-                u32::from_le_bytes([parts[2][0], parts[2][1], parts[2][2], parts[2][3]])
-            } else {
-                0
-            };
-            let timestamp = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs();
-
-            dbg_log!("[zmq] {topic} seq={sequence} body={body_size}bytes");
-
-            let mut s = state.lock().unwrap();
-            if s.messages.len() >= 100 {
-                s.messages.pop_front();
-            }
-            s.messages.push_back(ZmqMessage {
-                topic,
-                body_hex,
-                body_size,
-                sequence,
-                timestamp,
-            });
-        }
-
-        state.lock().unwrap().connected = false;
-        dbg_log!("[zmq] subscriber stopped");
-    });
-
-    ZmqHandle { shutdown, thread }
-}
-
-fn stop_zmq_subscriber(handle: ZmqHandle) {
-    handle.shutdown.store(true, Ordering::Relaxed);
-    let _ = handle.thread.join();
-}
-
-fn build_webview(
-    config: Arc<Mutex<RpcConfig>>,
-    music_runtime: Arc<music::MusicRuntime>,
-    zmq_state: Arc<Mutex<ZmqState>>,
-    zmq_handle: Arc<Mutex<Option<ZmqHandle>>>,
-) -> wry::WebViewBuilder<'static> {
-    let cfg = Arc::clone(&config);
-    wry::WebViewBuilder::new()
-        .with_asynchronous_custom_protocol("app".into(), move |_id, req, responder| {
-            let path = req.uri().path().to_string();
-            let query = req.uri().query().unwrap_or("").to_string();
-
-            dbg_log!(
-                "[proto] {} path={path} query={}b",
-                req.method(),
-                query.len()
-            );
-
-            if path == "/rpc" {
-                let body = percent_decode(&query);
-                dbg_log!("[proto] /rpc body: {:?}", &body[..body.len().min(200)]);
-                let cfg = Arc::clone(&cfg);
-                std::thread::spawn(move || {
-                    let result = do_rpc(&body, &cfg);
-                    dbg_log!("[proto] /rpc response: {} bytes", result.len());
-                    responder.respond(json_response(&result));
-                });
-                return;
-            }
-
-            if path == "/config" {
-                let body = percent_decode(&query);
-                dbg_log!("[proto] /config body: {:?}", redact_password(&body));
-                let result = update_config(&body, &cfg);
-                if result.zmq_changed {
-                    let mut handle = zmq_handle.lock().unwrap();
-                    if let Some(h) = handle.take() {
-                        stop_zmq_subscriber(h);
-                    }
-                    let addr = cfg.lock().unwrap().zmq_address.clone();
-                    if !addr.is_empty() {
-                        *handle = Some(start_zmq_subscriber(&addr, Arc::clone(&zmq_state)));
-                    }
-                }
-                let resp_body = if result.insecure_blocked {
-                    r#"{"ok":true,"insecure_blocked":true}"#
-                } else {
-                    r#"{"ok":true}"#
-                };
-                responder.respond(json_response(resp_body));
-                return;
-            }
-
-            if path == "/allow-insecure-rpc" {
-                let allowed = allow_insecure();
-                responder.respond(json_response(&format!(r#"{{"allowed":{allowed}}}"#)));
-                return;
-            }
-
-            if path == "/features" {
-                responder.respond(json_response(&format!(
-                    r#"{{"audio":{}}}"#,
-                    music::is_enabled()
-                )));
-                return;
-            }
-
-            if path == "/zmq/messages" {
-                let s = zmq_state.lock().unwrap();
-                let messages: Vec<serde_json::Value> = s
-                    .messages
-                    .iter()
-                    .map(|m| {
-                        serde_json::json!({
-                            "topic": m.topic,
-                            "body_hex": m.body_hex,
-                            "body_size": m.body_size,
-                            "sequence": m.sequence,
-                            "timestamp": m.timestamp,
-                        })
-                    })
-                    .collect();
-                let result = serde_json::json!({
-                    "connected": s.connected,
-                    "address": s.address,
-                    "messages": messages,
-                });
-                responder.respond(json_response(&result.to_string()));
-                return;
-            }
-
-            if let Some(result) =
-                music::handle_music_request(&path, &percent_decode(&query), &music_runtime)
-            {
-                responder.respond(json_response(&result));
-                return;
-            }
-
-            responder.respond(serve_asset(&path));
-        })
-        .with_devtools(cfg!(debug_assertions))
-        .with_url("app://localhost/index.html")
-}
-
-// --- Linux: GTK windowing ---
+mod protocol;
+mod rpc;
+mod zmq;
 
 #[cfg(target_os = "linux")]
 fn main() {
@@ -528,7 +13,6 @@ fn main() {
     // Work around WebKitGTK DMA-BUF renderer freeze on Wayland
     unsafe { std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1") };
 
-    dbg_log!("[main] gtk::init");
     gtk::init().unwrap();
 
     let window = gtk::Window::new(gtk::WindowType::Toplevel);
@@ -538,28 +22,14 @@ fn main() {
     let vbox = gtk::Box::new(gtk::Orientation::Vertical, 0);
     window.add(&vbox);
 
-    let config = Arc::new(Mutex::new(RpcConfig {
-        url: "http://127.0.0.1:8332".into(),
-        user: String::new(),
-        password: String::new(),
-        wallet: String::new(),
-        zmq_address: String::new(),
-    }));
-
+    let config = Arc::new(Mutex::new(rpc::RpcConfig::default()));
     let music_runtime = Arc::new(music::start_music());
-
-    let zmq_state = Arc::new(Mutex::new(ZmqState {
-        connected: false,
-        address: String::new(),
-        messages: VecDeque::new(),
-    }));
+    let zmq_state = Arc::new(Mutex::new(zmq::ZmqState::default()));
     let zmq_handle = Arc::new(Mutex::new(None));
 
-    dbg_log!("[main] building webview");
-    let _webview = build_webview(config, music_runtime, zmq_state, zmq_handle)
+    let _webview = protocol::build_webview(config, music_runtime, zmq_state, zmq_handle)
         .build_gtk(&vbox)
         .unwrap();
-    dbg_log!("[main] webview built, showing window");
 
     window.connect_delete_event(|_, _| {
         gtk::main_quit();
@@ -567,21 +37,17 @@ fn main() {
     });
 
     window.show_all();
-    dbg_log!("[main] entering gtk::main");
     gtk::main();
-    dbg_log!("[main] gtk::main returned");
 }
-
-// --- Non-Linux: winit windowing ---
 
 #[cfg(not(target_os = "linux"))]
 struct App {
     window: Option<winit::window::Window>,
     webview: Option<wry::WebView>,
-    config: Arc<Mutex<RpcConfig>>,
+    config: Arc<Mutex<rpc::RpcConfig>>,
     music_runtime: Arc<music::MusicRuntime>,
-    zmq_state: Arc<Mutex<ZmqState>>,
-    zmq_handle: Arc<Mutex<Option<ZmqHandle>>>,
+    zmq_state: Arc<Mutex<zmq::ZmqState>>,
+    zmq_handle: Arc<Mutex<Option<zmq::ZmqHandle>>>,
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -589,7 +55,7 @@ impl winit::application::ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         let attrs = winit::window::Window::default_attributes().with_title("Bitcoin Core RPC");
         let window = event_loop.create_window(attrs).unwrap();
-        let webview = build_webview(
+        let webview = protocol::build_webview(
             Arc::clone(&self.config),
             Arc::clone(&self.music_runtime),
             Arc::clone(&self.zmq_state),
@@ -615,25 +81,13 @@ impl winit::application::ApplicationHandler for App {
 
 #[cfg(not(target_os = "linux"))]
 fn main() {
-    let music_runtime = Arc::new(music::start_music());
-
     let event_loop = winit::event_loop::EventLoop::new().unwrap();
     let mut app = App {
         window: None,
         webview: None,
-        config: Arc::new(Mutex::new(RpcConfig {
-            url: "http://127.0.0.1:8332".into(),
-            user: String::new(),
-            password: String::new(),
-            wallet: String::new(),
-            zmq_address: String::new(),
-        })),
-        music_runtime,
-        zmq_state: Arc::new(Mutex::new(ZmqState {
-            connected: false,
-            address: String::new(),
-            messages: VecDeque::new(),
-        })),
+        config: Arc::new(Mutex::new(rpc::RpcConfig::default())),
+        music_runtime: Arc::new(music::start_music()),
+        zmq_state: Arc::new(Mutex::new(zmq::ZmqState::default())),
         zmq_handle: Arc::new(Mutex::new(None)),
     };
     event_loop.run_app(&mut app).unwrap();
