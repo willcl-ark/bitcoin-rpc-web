@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 
 use sha2::{Digest, Sha256};
 use tracing::{debug, warn};
@@ -36,12 +36,26 @@ impl Default for ZmqState {
     }
 }
 
+pub struct ZmqSharedState {
+    pub state: Mutex<ZmqState>,
+    pub changed: Condvar,
+}
+
+impl Default for ZmqSharedState {
+    fn default() -> Self {
+        Self {
+            state: Mutex::new(ZmqState::default()),
+            changed: Condvar::new(),
+        }
+    }
+}
+
 pub struct ZmqHandle {
     shutdown: Arc<AtomicBool>,
     thread: std::thread::JoinHandle<()>,
 }
 
-pub fn start_zmq_subscriber(address: &str, state: Arc<Mutex<ZmqState>>) -> ZmqHandle {
+pub fn start_zmq_subscriber(address: &str, state: Arc<ZmqSharedState>) -> ZmqHandle {
     let shutdown = Arc::new(AtomicBool::new(false));
     let flag = Arc::clone(&shutdown);
     let addr = address.to_string();
@@ -67,8 +81,12 @@ pub fn start_zmq_subscriber(address: &str, state: Arc<Mutex<ZmqState>>) -> ZmqHa
         }
 
         debug!(address = %addr, "connected ZMQ subscriber");
-        state.lock().unwrap().connected = true;
-        state.lock().unwrap().address = addr;
+        {
+            let mut s = state.state.lock().unwrap();
+            s.connected = true;
+            s.address = addr;
+        }
+        state.changed.notify_all();
 
         while !flag.load(Ordering::Relaxed) {
             let parts = match socket.recv_multipart(0) {
@@ -108,10 +126,11 @@ pub fn start_zmq_subscriber(address: &str, state: Arc<Mutex<ZmqState>>) -> ZmqHa
                 .unwrap_or_default()
                 .as_secs();
 
-            let mut s = state.lock().unwrap();
-            let limit = s
-                .buffer_limit
-                .clamp(crate::rpc::MIN_ZMQ_BUFFER_LIMIT, crate::rpc::MAX_ZMQ_BUFFER_LIMIT);
+            let mut s = state.state.lock().unwrap();
+            let limit = s.buffer_limit.clamp(
+                crate::rpc::MIN_ZMQ_BUFFER_LIMIT,
+                crate::rpc::MAX_ZMQ_BUFFER_LIMIT,
+            );
             if s.messages.len() >= limit {
                 s.messages.pop_front();
             }
@@ -127,9 +146,12 @@ pub fn start_zmq_subscriber(address: &str, state: Arc<Mutex<ZmqState>>) -> ZmqHa
                 timestamp,
                 event_hash,
             });
+            drop(s);
+            state.changed.notify_all();
         }
 
-        state.lock().unwrap().connected = false;
+        state.state.lock().unwrap().connected = false;
+        state.changed.notify_all();
         debug!("stopped ZMQ subscriber");
     });
 

@@ -1,5 +1,5 @@
-use std::sync::{Arc, Mutex};
 use std::net::{IpAddr, Ipv4Addr};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use tracing::{debug, warn};
 
@@ -74,14 +74,9 @@ pub fn do_rpc(body: &str, config: &Arc<Mutex<RpcConfig>>) -> String {
         "params": params,
     });
 
-    let agent = ureq::Agent::config_builder()
-        .http_status_as_error(false)
-        .build()
-        .new_agent();
-
     let payload = envelope.to_string();
     debug!(method, url = %url, "rpc POST");
-    match agent
+    match rpc_agent()
         .post(&url)
         .header("Authorization", &basic_auth(&user, &password))
         .content_type("application/json")
@@ -98,6 +93,16 @@ pub fn do_rpc(body: &str, config: &Arc<Mutex<RpcConfig>>) -> String {
             format!(r#"{{"error":"{}"}}"#, e)
         }
     }
+}
+
+fn rpc_agent() -> &'static ureq::Agent {
+    static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
+    AGENT.get_or_init(|| {
+        ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .build()
+            .new_agent()
+    })
 }
 
 pub fn update_config(body: &str, config: &Arc<Mutex<RpcConfig>>) -> ConfigUpdateResult {
@@ -233,14 +238,14 @@ fn parse_usize(value: &serde_json::Value) -> Option<usize> {
     if let Some(n) = value.as_u64() {
         return usize::try_from(n).ok();
     }
-    value
-        .as_str()
-        .and_then(|s| s.trim().parse::<usize>().ok())
+    value.as_str().and_then(|s| s.trim().parse::<usize>().ok())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_ZMQ_BUFFER_LIMIT, MIN_ZMQ_BUFFER_LIMIT, RpcConfig, is_safe_rpc_host, update_config};
+    use super::{
+        MAX_ZMQ_BUFFER_LIMIT, MIN_ZMQ_BUFFER_LIMIT, RpcConfig, is_safe_rpc_host, update_config,
+    };
     use std::sync::{Arc, Mutex};
 
     #[test]

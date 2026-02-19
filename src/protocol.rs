@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use tracing::{debug, warn};
 use wry::http::Response;
@@ -9,13 +9,16 @@ use wry::http::header::{ACCESS_CONTROL_ALLOW_ORIGIN, CONTENT_TYPE};
 use crate::music;
 use crate::rpc::{self, RpcConfig};
 use crate::rpc_limiter::RpcLimiter;
-use crate::zmq::{self, ZmqHandle, ZmqState};
+use crate::thread_pool::ThreadPool;
+use crate::zmq::{self, ZmqHandle, ZmqSharedState};
 
 pub fn build_webview(
     config: Arc<Mutex<RpcConfig>>,
     rpc_limiter: Arc<RpcLimiter>,
+    rpc_pool: Arc<ThreadPool>,
+    zmq_poll_pool: Arc<ThreadPool>,
     music_runtime: Arc<music::MusicRuntime>,
-    zmq_state: Arc<Mutex<ZmqState>>,
+    zmq_state: Arc<ZmqSharedState>,
     zmq_handle: Arc<Mutex<Option<ZmqHandle>>>,
 ) -> wry::WebViewBuilder<'static> {
     let cfg = Arc::clone(&config);
@@ -29,11 +32,16 @@ pub fn build_webview(
                 let body = request_body(&req, &query);
                 if let Some(permit) = rpc_limiter.try_acquire() {
                     let cfg = Arc::clone(&cfg);
-                    std::thread::spawn(move || {
-                        let _permit = permit;
-                        let result = rpc::do_rpc(&body, &cfg);
-                        responder.respond(json_response(&result));
-                    });
+                    if rpc_pool
+                        .execute(move || {
+                            let _permit = permit;
+                            let result = rpc::do_rpc(&body, &cfg);
+                            responder.respond(json_response(&result));
+                        })
+                        .is_err()
+                    {
+                        warn!("rpc worker pool unavailable");
+                    }
                 } else {
                     warn!("rpc request rejected due to in-flight limit");
                     responder.respond(json_response(
@@ -48,7 +56,7 @@ pub fn build_webview(
                 let result = rpc::update_config(&body, &cfg);
                 {
                     let limit = cfg.lock().unwrap().zmq_buffer_limit;
-                    let mut state = zmq_state.lock().unwrap();
+                    let mut state = zmq_state.state.lock().unwrap();
                     state.buffer_limit = limit;
                     while state.messages.len() > state.buffer_limit {
                         state.messages.pop_front();
@@ -92,7 +100,7 @@ pub fn build_webview(
                 let sequence = query_param_u64(&query, "sequence");
                 let result = if let (Some(timestamp), Some(sequence)) = (timestamp, sequence) {
                     let raw_hex = {
-                        let s = zmq_state.lock().unwrap();
+                        let s = zmq_state.state.lock().unwrap();
                         s.messages
                             .iter()
                             .rev()
@@ -126,26 +134,22 @@ pub fn build_webview(
                     .unwrap_or(0)
                     .clamp(0, 30_000);
                 let state = Arc::clone(&zmq_state);
-                std::thread::spawn(move || {
-                    if wait_ms > 0 {
-                        let timeout = Duration::from_millis(wait_ms);
-                        let start = Instant::now();
-                        while start.elapsed() < timeout {
-                            let has_new = {
-                                let s = state.lock().unwrap();
-                                s.messages
-                                    .back()
-                                    .is_some_and(|m| m.cursor > since)
-                            };
-                            if has_new {
-                                break;
-                            }
-                            std::thread::sleep(Duration::from_millis(50));
+                if zmq_poll_pool
+                    .execute(move || {
+                        if wait_ms > 0 {
+                            let timeout = Duration::from_millis(wait_ms);
+                            let guard = state.state.lock().unwrap();
+                            let _ = state.changed.wait_timeout_while(guard, timeout, |s| {
+                                s.messages.back().is_none_or(|m| m.cursor <= since)
+                            });
                         }
-                    }
-                    let result = zmq_messages_response(&state, since);
-                    responder.respond(json_response(&result));
-                });
+                        let result = zmq_messages_response(&state, since);
+                        responder.respond(json_response(&result));
+                    })
+                    .is_err()
+                {
+                    warn!("zmq poll worker pool unavailable");
+                }
                 return;
             }
 
@@ -212,7 +216,11 @@ fn percent_decode(input: &str) -> String {
 
 fn request_body(req: &wry::http::Request<Vec<u8>>, query: &str) -> String {
     if req.method() == wry::http::Method::POST {
-        if let Some(encoded) = req.headers().get("x-app-json").and_then(|v| v.to_str().ok()) {
+        if let Some(encoded) = req
+            .headers()
+            .get("x-app-json")
+            .and_then(|v| v.to_str().ok())
+        {
             let decoded = percent_decode(encoded);
             if !decoded.is_empty() {
                 return decoded;
@@ -238,8 +246,8 @@ fn query_param_u64(query: &str, key: &str) -> Option<u64> {
         .and_then(|v| v.parse::<u64>().ok())
 }
 
-fn zmq_messages_response(zmq_state: &Arc<Mutex<ZmqState>>, since: u64) -> String {
-    let s = zmq_state.lock().unwrap();
+fn zmq_messages_response(zmq_state: &Arc<ZmqSharedState>, since: u64) -> String {
+    let s = zmq_state.state.lock().unwrap();
     let mut truncated = false;
     let messages: Vec<serde_json::Value> = s
         .messages

@@ -5,7 +5,34 @@ mod music;
 mod protocol;
 mod rpc;
 mod rpc_limiter;
+mod thread_pool;
 mod zmq;
+
+struct RuntimeTuning {
+    rpc_threads: usize,
+    zmq_poll_threads: usize,
+}
+
+fn bounded_from_env(var: &str, default: usize, min: usize, max: usize) -> usize {
+    let parsed = std::env::var(var)
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(default);
+    parsed.clamp(min, max)
+}
+
+fn runtime_tuning() -> RuntimeTuning {
+    let cpus = std::thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(2)
+        .clamp(1, 64);
+    let default_rpc = cpus.clamp(2, 8);
+    let default_zmq_poll = (cpus / 2).clamp(1, 4);
+    RuntimeTuning {
+        rpc_threads: bounded_from_env("RPC_THREADS", default_rpc, 1, 64),
+        zmq_poll_threads: bounded_from_env("ZMQ_POLL_THREADS", default_zmq_poll, 1, 32),
+    }
+}
 
 fn shutdown_zmq(zmq_handle: &Arc<Mutex<Option<zmq::ZmqHandle>>>) {
     let mut handle = zmq_handle.lock().unwrap();
@@ -20,6 +47,7 @@ fn main() {
     use wry::WebViewBuilderExtUnix;
 
     logging::init();
+    let tuning = runtime_tuning();
 
     gtk::init().unwrap();
 
@@ -31,21 +59,24 @@ fn main() {
     window.add(&vbox);
 
     let config = Arc::new(Mutex::new(rpc::RpcConfig::default()));
-    let rpc_limiter = rpc_limiter::RpcLimiter::new(8);
+    let rpc_limiter = rpc_limiter::RpcLimiter::new(tuning.rpc_threads);
+    let rpc_pool = thread_pool::ThreadPool::new(tuning.rpc_threads);
+    let zmq_poll_pool = thread_pool::ThreadPool::new(tuning.zmq_poll_threads);
     let music_runtime = Arc::new(music::start_music());
-    let zmq_state = Arc::new(Mutex::new(zmq::ZmqState::default()));
+    let zmq_state = Arc::new(zmq::ZmqSharedState::default());
     let zmq_handle = Arc::new(Mutex::new(None));
 
-    let _webview =
-        protocol::build_webview(
-            config,
-            rpc_limiter,
-            music_runtime,
-            zmq_state,
-            Arc::clone(&zmq_handle),
-        )
-        .build_gtk(&vbox)
-        .unwrap();
+    let _webview = protocol::build_webview(
+        config,
+        rpc_limiter,
+        rpc_pool,
+        zmq_poll_pool,
+        music_runtime,
+        zmq_state,
+        Arc::clone(&zmq_handle),
+    )
+    .build_gtk(&vbox)
+    .unwrap();
 
     let zmq_handle_for_shutdown = Arc::clone(&zmq_handle);
     window.connect_delete_event(move |_, _| {
@@ -64,8 +95,10 @@ struct App {
     webview: Option<wry::WebView>,
     config: Arc<Mutex<rpc::RpcConfig>>,
     rpc_limiter: Arc<rpc_limiter::RpcLimiter>,
+    rpc_pool: Arc<thread_pool::ThreadPool>,
+    zmq_poll_pool: Arc<thread_pool::ThreadPool>,
     music_runtime: Arc<music::MusicRuntime>,
-    zmq_state: Arc<Mutex<zmq::ZmqState>>,
+    zmq_state: Arc<zmq::ZmqSharedState>,
     zmq_handle: Arc<Mutex<Option<zmq::ZmqHandle>>>,
 }
 
@@ -77,6 +110,8 @@ impl winit::application::ApplicationHandler for App {
         let webview = protocol::build_webview(
             Arc::clone(&self.config),
             Arc::clone(&self.rpc_limiter),
+            Arc::clone(&self.rpc_pool),
+            Arc::clone(&self.zmq_poll_pool),
             Arc::clone(&self.music_runtime),
             Arc::clone(&self.zmq_state),
             Arc::clone(&self.zmq_handle),
@@ -103,15 +138,18 @@ impl winit::application::ApplicationHandler for App {
 #[cfg(not(target_os = "linux"))]
 fn main() {
     logging::init();
+    let tuning = runtime_tuning();
 
     let event_loop = winit::event_loop::EventLoop::new().unwrap();
     let mut app = App {
         window: None,
         webview: None,
         config: Arc::new(Mutex::new(rpc::RpcConfig::default())),
-        rpc_limiter: rpc_limiter::RpcLimiter::new(8),
+        rpc_limiter: rpc_limiter::RpcLimiter::new(tuning.rpc_threads),
+        rpc_pool: thread_pool::ThreadPool::new(tuning.rpc_threads),
+        zmq_poll_pool: thread_pool::ThreadPool::new(tuning.zmq_poll_threads),
         music_runtime: Arc::new(music::start_music()),
-        zmq_state: Arc::new(Mutex::new(zmq::ZmqState::default())),
+        zmq_state: Arc::new(zmq::ZmqSharedState::default()),
         zmq_handle: Arc::new(Mutex::new(None)),
     };
     event_loop.run_app(&mut app).unwrap();
