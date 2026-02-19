@@ -203,6 +203,7 @@ function renderSidebar() {
     groups[cat].push(m);
   }
 
+  cachedMethodGroups = null;
   const nav = document.getElementById("method-list");
   nav.innerHTML = "";
 
@@ -225,17 +226,24 @@ function renderSidebar() {
   }
 }
 
+let cachedMethodGroups = null;
+
 function filterMethods() {
   const q = document.getElementById("search").value.toLowerCase();
-  const methods = document.querySelectorAll("#method-list .method");
-  const details = document.querySelectorAll("#method-list details");
-
-  for (const m of methods) {
-    m.hidden = !m.dataset.name.includes(q);
+  if (!cachedMethodGroups) {
+    cachedMethodGroups = [];
+    for (const d of document.querySelectorAll("#method-list details")) {
+      cachedMethodGroups.push({ details: d, methods: Array.from(d.querySelectorAll(".method")) });
+    }
   }
-  for (const d of details) {
-    const visible = d.querySelectorAll(".method:not([hidden])");
-    d.hidden = visible.length === 0;
+  for (const { details, methods } of cachedMethodGroups) {
+    let visibleCount = 0;
+    for (const m of methods) {
+      const visible = m.dataset.name.includes(q);
+      m.hidden = !visible;
+      if (visible) visibleCount++;
+    }
+    details.hidden = visibleCount === 0;
   }
 }
 
@@ -514,16 +522,22 @@ async function fetchDashboard() {
       rpcCall("uptime", []),
       rpcCall("getnettotals", []),
     ]);
-    if (chain.result) renderChain(chain.result, up.result);
-    if (mempool.result) renderMempool(mempool.result);
-    if (net.result) renderNetwork(net.result);
-    if (totals.result) renderNetTotals(totals.result);
-    if (peers.result) {
-      renderPeers(peers.result);
-      lastPeersRefreshMs = Date.now();
-    }
-    pendingDashboardParts.clear();
-    updateStatus(true);
+    requestAnimationFrame(() => {
+      try {
+        if (chain.result) renderChain(chain.result, up.result);
+        if (mempool.result) renderMempool(mempool.result);
+        if (net.result) renderNetwork(net.result);
+        if (totals.result) renderNetTotals(totals.result);
+        if (peers.result) {
+          renderPeers(peers.result);
+          lastPeersRefreshMs = Date.now();
+        }
+        pendingDashboardParts.clear();
+        updateStatus(true);
+      } catch (_) {
+        updateStatus(false);
+      }
+    });
   } catch (_) {
     updateStatus(false);
   } finally {
@@ -536,13 +550,31 @@ async function fetchDashboard() {
 }
 
 function esc(s) {
-  const d = document.createElement("span");
-  d.textContent = s;
-  return d.innerHTML;
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 function dd(label, value) {
   return `<dt>${esc(label)}</dt><dd>${esc(String(value))}</dd>`;
+}
+
+function updateDl(dl, entries) {
+  if (dl.children.length !== entries.length * 2) {
+    dl.textContent = "";
+    for (const [label, value] of entries) {
+      const dt = document.createElement("dt");
+      dt.textContent = label;
+      const dd = document.createElement("dd");
+      dd.textContent = value;
+      dl.appendChild(dt);
+      dl.appendChild(dd);
+    }
+    return;
+  }
+  for (let i = 0; i < entries.length; i++) {
+    const dd = dl.children[i * 2 + 1];
+    const value = entries[i][1];
+    if (dd.textContent !== value) dd.textContent = value;
+  }
 }
 
 function formatDuration(secs) {
@@ -564,51 +596,54 @@ function formatBytes(bytes) {
 
 function renderChain(c, uptime) {
   const dl = document.querySelector("#dash-chain dl");
-  let html = "";
-  html += dd("Chain", c.chain);
-  html += dd("Blocks", c.blocks.toLocaleString());
-  html += dd("Headers", c.headers.toLocaleString());
-  html += dd("Difficulty", Number(c.difficulty).toExponential(3));
-  html += dd("Progress", (c.verificationprogress * 100).toFixed(4) + "%");
-  html += dd("Pruned", c.pruned ? "yes" : "no");
-  html += dd("Disk size", formatBytes(c.size_on_disk));
-  if (uptime != null) html += dd("Uptime", formatDuration(uptime));
-  dl.innerHTML = html;
+  const entries = [
+    ["Chain", c.chain],
+    ["Blocks", c.blocks.toLocaleString()],
+    ["Headers", c.headers.toLocaleString()],
+    ["Difficulty", Number(c.difficulty).toExponential(3)],
+    ["Progress", (c.verificationprogress * 100).toFixed(4) + "%"],
+    ["Pruned", c.pruned ? "yes" : "no"],
+    ["Disk size", formatBytes(c.size_on_disk)],
+  ];
+  if (uptime != null) entries.push(["Uptime", formatDuration(uptime)]);
+  updateDl(dl, entries);
 }
 
 function renderMempool(m) {
   const dl = document.querySelector("#dash-mempool dl");
-  let html = "";
-  html += dd("Transactions", m.size.toLocaleString());
-  html += dd("Size", formatBytes(m.bytes));
-  html += dd("Memory usage", formatBytes(m.usage));
-  html += dd("Min fee", m.mempoolminfee + " BTC/kvB");
-  dl.innerHTML = html;
+  updateDl(dl, [
+    ["Transactions", m.size.toLocaleString()],
+    ["Size", formatBytes(m.bytes)],
+    ["Memory usage", formatBytes(m.usage)],
+    ["Min fee", m.mempoolminfee + " BTC/kvB"],
+  ]);
 }
 
 function renderNetwork(n) {
   const dl = document.querySelector("#dash-network dl");
-  let html = "";
-  html += dd("User agent", n.subversion);
-  html += dd("Protocol", n.protocolversion);
-  html += dd("Connections", n.connections + " (" + n.connections_in + " in / " + n.connections_out + " out)");
-  if (n.localservicesnames) html += dd("Services", n.localservicesnames.join(", "));
-  if (n.warnings) html += dd("Warnings", n.warnings);
-  dl.innerHTML = html;
+  const entries = [
+    ["User agent", n.subversion],
+    ["Protocol", String(n.protocolversion)],
+    ["Connections", n.connections + " (" + n.connections_in + " in / " + n.connections_out + " out)"],
+  ];
+  if (n.localservicesnames) entries.push(["Services", n.localservicesnames.join(", ")]);
+  if (n.warnings) entries.push(["Warnings", n.warnings]);
+  updateDl(dl, entries);
 }
 
 function renderNetTotals(t) {
   const dl = document.querySelector("#dash-nettotals dl");
-  let html = "";
-  html += dd("Received", formatBytes(t.totalbytesrecv));
-  html += dd("Sent", formatBytes(t.totalbytessent));
+  const entries = [
+    ["Received", formatBytes(t.totalbytesrecv)],
+    ["Sent", formatBytes(t.totalbytessent)],
+  ];
   const up = t.uploadtarget;
   if (up && up.target > 0) {
-    html += dd("Upload target", formatBytes(up.target));
-    html += dd("Left in cycle", formatBytes(up.bytes_left_in_cycle));
-    html += dd("Serve historical", up.serve_historical_blocks ? "yes" : "no");
+    entries.push(["Upload target", formatBytes(up.target)]);
+    entries.push(["Left in cycle", formatBytes(up.bytes_left_in_cycle)]);
+    entries.push(["Serve historical", up.serve_historical_blocks ? "yes" : "no"]);
   }
-  dl.innerHTML = html;
+  updateDl(dl, entries);
 }
 
 function renderPeers(peers) {
@@ -753,10 +788,10 @@ async function fetchZmq() {
       clearZmqFeed();
     }
     if (Array.isArray(data.messages) && data.messages.length > 0) {
-      renderZmq(data);
+      requestAnimationFrame(() => renderZmq(data));
       queueDashboardPartRefresh(deriveDashboardParts(data.messages));
     }
-    if (!data.connected) renderZmq(data);
+    if (!data.connected) requestAnimationFrame(() => renderZmq(data));
     return data;
   } catch (_) {
     clearZmqFeed();
@@ -877,16 +912,21 @@ function renderZmq(data) {
   }
   section.hidden = false;
   const shouldFollowTail = isZmqFeedNearBottom(feed);
-  for (let i = 0; i < data.messages.length; i++) {
-    const row = buildZmqRow(data.messages[i]);
-    feed.appendChild(row);
-  }
-  while (feed.children.length > ZMQ_FEED_MAX_ROWS) {
+  const messages = data.messages.length > ZMQ_FEED_MAX_ROWS
+    ? data.messages.slice(data.messages.length - ZMQ_FEED_MAX_ROWS)
+    : data.messages;
+  const excess = feed.children.length + messages.length - ZMQ_FEED_MAX_ROWS;
+  for (let i = 0; i < excess; i++) {
     const stale = feed.firstElementChild;
     if (!stale) break;
     if (stale.dataset.zmqId) zmqMessageLookup.delete(stale.dataset.zmqId);
     stale.remove();
   }
+  const frag = document.createDocumentFragment();
+  for (let i = 0; i < messages.length; i++) {
+    frag.appendChild(buildZmqRow(messages[i]));
+  }
+  feed.appendChild(frag);
   if (shouldFollowTail) {
     feed.scrollTop = feed.scrollHeight;
   }
