@@ -12,9 +12,17 @@ let zmqRefreshTimer = null;
 let zmqMessageLookup = new Map();
 let dashboardPollingGeneration = 0;
 let zmqPollingGeneration = 0;
+let pendingDashboardParts = new Set();
+let peerById = new Map();
+let peerRows = new Map();
+let lastZmqCursor = 0;
+let lastPeersRefreshMs = 0;
 const ZMQ_FAST_POLL_MS = 250;
 const ZMQ_SLOW_POLL_MS = 2000;
 const DASHBOARD_ZMQ_FALLBACK_MS = 15_000;
+const DASHBOARD_PART_DEBOUNCE_MS = 250;
+const PEERS_REFRESH_MIN_MS = 10_000;
+const ZMQ_FEED_MAX_ROWS = 200;
 
 function encodeHeaderJson(value) {
   return encodeURIComponent(JSON.stringify(value));
@@ -45,6 +53,8 @@ async function init() {
     startDashboardPolling();
   });
   document.getElementById("cfg-url").addEventListener("input", clearUrlError);
+  initPeerTableClick();
+  initZmqFeedClick();
   startDashboardPolling();
   if (audioEnabled) {
     initMusic();
@@ -421,8 +431,71 @@ function requestDashboardRefreshSoon() {
   if (zmqRefreshTimer) return;
   zmqRefreshTimer = setTimeout(async () => {
     zmqRefreshTimer = null;
-    await fetchDashboard();
-  }, 150);
+    await flushDashboardPartRefreshes();
+  }, DASHBOARD_PART_DEBOUNCE_MS);
+}
+
+function dashboardVisible() {
+  return !document.getElementById("dashboard").hidden;
+}
+
+function queueDashboardPartRefresh(parts) {
+  if (!dashboardVisible()) return;
+  for (const part of parts) pendingDashboardParts.add(part);
+  requestDashboardRefreshSoon();
+}
+
+function deriveDashboardParts(messages) {
+  const parts = new Set();
+  for (const msg of messages) {
+    if (msg.topic === "hashblock" || msg.topic === "rawblock") {
+      parts.add("chain");
+      parts.add("mempool");
+    } else if (msg.topic === "hashtx" || msg.topic === "rawtx" || msg.topic === "sequence") {
+      parts.add("mempool");
+    }
+  }
+  return parts;
+}
+
+async function flushDashboardPartRefreshes() {
+  if (!dashboardVisible() || pendingDashboardParts.size === 0) return;
+  if (dashboardFetchInFlight) return;
+  const parts = new Set(pendingDashboardParts);
+  pendingDashboardParts.clear();
+  const tasks = [];
+  if (parts.has("chain")) {
+    tasks.push((async () => {
+      const [chain, uptime] = await Promise.all([
+        rpcCall("getblockchaininfo", []),
+        rpcCall("uptime", []),
+      ]);
+      if (chain.result) renderChain(chain.result, uptime.result);
+    })());
+  }
+  if (parts.has("mempool")) {
+    tasks.push((async () => {
+      const mempool = await rpcCall("getmempoolinfo", []);
+      if (mempool.result) renderMempool(mempool.result);
+    })());
+  }
+  const now = Date.now();
+  if (parts.has("peers") && (now - lastPeersRefreshMs >= PEERS_REFRESH_MIN_MS)) {
+    tasks.push((async () => {
+      const peers = await rpcCall("getpeerinfo", []);
+      if (peers.result) {
+        renderPeers(peers.result);
+        lastPeersRefreshMs = Date.now();
+      }
+    })());
+  }
+  if (tasks.length === 0) return;
+  try {
+    await Promise.all(tasks);
+    updateStatus(true);
+  } catch (_) {
+    updateStatus(false);
+  }
 }
 
 async function fetchDashboard() {
@@ -444,7 +517,11 @@ async function fetchDashboard() {
     if (mempool.result) renderMempool(mempool.result);
     if (net.result) renderNetwork(net.result);
     if (totals.result) renderNetTotals(totals.result);
-    if (peers.result) renderPeers(peers.result);
+    if (peers.result) {
+      renderPeers(peers.result);
+      lastPeersRefreshMs = Date.now();
+    }
+    pendingDashboardParts.clear();
     updateStatus(true);
   } catch (_) {
     updateStatus(false);
@@ -535,24 +612,47 @@ function renderNetTotals(t) {
 
 function renderPeers(peers) {
   lastPeers = peers;
+  peerById = new Map(peers.map((p) => [p.id, p]));
   const tbody = document.querySelector("#dash-peer-table tbody");
-  let html = "";
+  const seen = new Set();
   for (const p of peers) {
-    html += '<tr class="peer-row" data-peer-id="' + p.id + '">';
-    html += "<td>" + esc(p.addr) + "</td>";
-    html += "<td>" + esc(p.subver) + "</td>";
-    html += '<td class="' + (p.inbound ? "peer-in" : "peer-out") + '">' + (p.inbound ? "in" : "out") + "</td>";
-    html += "<td>" + (p.pingtime != null ? (p.pingtime * 1000).toFixed(0) + " ms" : "–") + "</td>";
-    html += "</tr>";
+    seen.add(p.id);
+    let row = peerRows.get(p.id);
+    if (!row) {
+      row = document.createElement("tr");
+      row.className = "peer-row";
+      row.dataset.peerId = String(p.id);
+      row.appendChild(document.createElement("td"));
+      row.appendChild(document.createElement("td"));
+      row.appendChild(document.createElement("td"));
+      row.appendChild(document.createElement("td"));
+      peerRows.set(p.id, row);
+    }
+    const direction = p.inbound ? "in" : "out";
+    const ping = p.pingtime != null ? (p.pingtime * 1000).toFixed(0) + " ms" : "–";
+    if (row.children[0].textContent !== p.addr) row.children[0].textContent = p.addr;
+    if (row.children[1].textContent !== p.subver) row.children[1].textContent = p.subver;
+    if (row.children[2].textContent !== direction) row.children[2].textContent = direction;
+    row.children[2].className = p.inbound ? "peer-in" : "peer-out";
+    if (row.children[3].textContent !== ping) row.children[3].textContent = ping;
+    tbody.appendChild(row);
   }
-  tbody.innerHTML = html;
-  for (const row of tbody.querySelectorAll(".peer-row")) {
-    row.addEventListener("click", () => {
-      const id = Number(row.dataset.peerId);
-      const peer = lastPeers.find(p => p.id === id);
-      if (peer) showPeerDetail(peer);
-    });
+  for (const [id, row] of peerRows) {
+    if (seen.has(id)) continue;
+    row.remove();
+    peerRows.delete(id);
   }
+}
+
+function initPeerTableClick() {
+  const tbody = document.querySelector("#dash-peer-table tbody");
+  tbody.addEventListener("click", (ev) => {
+    const row = ev.target.closest(".peer-row");
+    if (!row) return;
+    const id = Number(row.dataset.peerId);
+    const peer = peerById.get(id) || lastPeers.find((p) => p.id === id);
+    if (peer) showPeerDetail(peer);
+  });
 }
 
 function showPeerDetail(peer) {
@@ -605,7 +705,6 @@ async function showZmqRpcResult(title, description, run) {
 // --- ZMQ feed ---
 
 let zmqTimer = null;
-let lastZmqCursor = "";
 
 function stopZmqPolling() {
   zmqPollingGeneration += 1;
@@ -625,22 +724,6 @@ function startZmqPolling(dashboardGeneration) {
   pollZmqLoop(zmqPollingGeneration);
 }
 
-function zmqCursor(data) {
-  if (!data || !Array.isArray(data.messages) || data.messages.length === 0) {
-    return `${data && data.connected ? "1" : "0"}|${data && data.address ? data.address : ""}|empty`;
-  }
-  const msg = data.messages[data.messages.length - 1];
-  return [
-    data.connected ? "1" : "0",
-    data.address || "",
-    msg.topic || "",
-    String(msg.sequence ?? ""),
-    String(msg.timestamp ?? ""),
-    String(msg.body_size ?? ""),
-    msg.body_hex || "",
-  ].join("|");
-}
-
 function setZmqConnected(next) {
   if (zmqConnected === next) return;
   zmqConnected = next;
@@ -653,26 +736,29 @@ async function pollZmqLoop(generation) {
   if (generation !== zmqPollingGeneration) return;
   const connected = !!(data && data.connected);
   setZmqConnected(connected);
-  const delay = connected ? ZMQ_FAST_POLL_MS : ZMQ_SLOW_POLL_MS;
+  const delay = connected ? 0 : ZMQ_SLOW_POLL_MS;
   zmqTimer = setTimeout(() => pollZmqLoop(generation), delay);
 }
 
 async function fetchZmq() {
   try {
-    const resp = await fetch("/zmq/messages");
+    const waitMs = zmqConnected ? ZMQ_FAST_POLL_MS : 0;
+    const resp = await fetch(`/zmq/messages?since=${encodeURIComponent(String(lastZmqCursor))}&wait_ms=${waitMs}`);
     const data = await resp.json();
-    const cursor = zmqCursor(data);
-    const changed = cursor !== lastZmqCursor;
-    lastZmqCursor = cursor;
-    if (changed) {
+    if (typeof data.cursor === "number" && Number.isFinite(data.cursor)) {
+      lastZmqCursor = data.cursor;
+    }
+    if (data.truncated) {
+      clearZmqFeed();
+    }
+    if (Array.isArray(data.messages) && data.messages.length > 0) {
       renderZmq(data);
+      queueDashboardPartRefresh(deriveDashboardParts(data.messages));
     }
-    if (changed && data.connected && Array.isArray(data.messages) && data.messages.length > 0) {
-      requestDashboardRefreshSoon();
-    }
+    if (!data.connected) renderZmq(data);
     return data;
   } catch (_) {
-    document.getElementById("dash-zmq").hidden = true;
+    clearZmqFeed();
     return null;
   }
 }
@@ -745,43 +831,78 @@ function handleZmqRowClick(id) {
   showZmqRpcResult(action.title, action.description, action.run);
 }
 
+function initZmqFeedClick() {
+  const feed = document.getElementById("dash-zmq-feed");
+  feed.addEventListener("click", (ev) => {
+    const row = ev.target.closest(".zmq-row.zmq-clickable");
+    if (!row) return;
+    handleZmqRowClick(row.dataset.zmqId);
+  });
+}
+
+function buildZmqRow(msg) {
+  const time = formatUnixTime(msg.timestamp);
+  const topic = msg.topic;
+  const topicCls = zmqTopicClass(topic);
+  const rowId = String(msg.cursor ?? `${msg.timestamp}-${msg.sequence}-${topic}`);
+  const action = zmqRowAction(msg);
+  zmqMessageLookup.set(rowId, msg);
+
+  let dataHtml;
+  if (msg.event_hash) {
+    dataHtml = colorHexBytes(msg.event_hash);
+  } else if (topic === "rawblock" || topic === "rawtx") {
+    dataHtml = esc(formatBytes(msg.body_size));
+  } else {
+    dataHtml = colorHexBytes(msg.body_hex);
+  }
+
+  const row = document.createElement("div");
+  row.className = "zmq-row" + (action ? " zmq-clickable" : "");
+  row.dataset.zmqId = rowId;
+  row.innerHTML =
+    '<span class="zmq-time">' + esc(time) + '</span>'
+    + '<span class="zmq-topic ' + topicCls + '">' + esc(topic) + '</span>'
+    + '<span class="zmq-data">' + dataHtml + "</span>";
+  return row;
+}
+
 function renderZmq(data) {
   const section = document.getElementById("dash-zmq");
-  if (!data.connected || data.messages.length === 0) {
+  const feed = document.getElementById("dash-zmq-feed");
+  if (!data.connected) {
     section.hidden = true;
+    feed.textContent = "";
     zmqMessageLookup = new Map();
     return;
   }
-  section.hidden = false;
-  const feed = document.getElementById("dash-zmq-feed");
-  zmqMessageLookup = new Map();
-  let html = "";
-  for (let i = data.messages.length - 1; i >= 0; i--) {
-    const msg = data.messages[i];
-    const time = formatUnixTime(msg.timestamp);
-    const topic = msg.topic;
-    const topicCls = zmqTopicClass(topic);
-    const rowId = `${msg.timestamp}-${msg.sequence}-${i}`;
-    const action = zmqRowAction(msg);
-    zmqMessageLookup.set(rowId, msg);
-    let dataHtml;
-    if (msg.event_hash) {
-      dataHtml = colorHexBytes(msg.event_hash);
-    } else if (topic === "rawblock" || topic === "rawtx") {
-      dataHtml = esc(formatBytes(msg.body_size));
-    } else {
-      dataHtml = colorHexBytes(msg.body_hex);
+  if (!Array.isArray(data.messages) || data.messages.length === 0) {
+    section.hidden = true;
+    if (!data.connected) {
+      feed.textContent = "";
+      zmqMessageLookup = new Map();
     }
-    html += '<div class="zmq-row' + (action ? ' zmq-clickable' : '') + '" data-zmq-id="' + esc(rowId) + '">'
-      + '<span class="zmq-time">' + esc(time) + '</span>'
-      + '<span class="zmq-topic ' + topicCls + '">' + esc(topic) + '</span>'
-      + '<span class="zmq-data">' + dataHtml + '</span>'
-      + '</div>';
+    return;
   }
-  feed.innerHTML = html;
-  for (const row of feed.querySelectorAll(".zmq-row.zmq-clickable")) {
-    row.addEventListener("click", () => handleZmqRowClick(row.dataset.zmqId));
+  section.hidden = false;
+  for (let i = 0; i < data.messages.length; i++) {
+    const row = buildZmqRow(data.messages[i]);
+    feed.prepend(row);
   }
+  while (feed.children.length > ZMQ_FEED_MAX_ROWS) {
+    const stale = feed.lastElementChild;
+    if (!stale) break;
+    if (stale.dataset.zmqId) zmqMessageLookup.delete(stale.dataset.zmqId);
+    stale.remove();
+  }
+}
+
+function clearZmqFeed() {
+  const section = document.getElementById("dash-zmq");
+  const feed = document.getElementById("dash-zmq-feed");
+  section.hidden = true;
+  feed.textContent = "";
+  zmqMessageLookup = new Map();
 }
 
 // --- Music player ---

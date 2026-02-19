@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use tracing::{debug, warn};
 use wry::http::Response;
@@ -120,28 +121,31 @@ pub fn build_webview(
             }
 
             if path == "/zmq/messages" {
-                let s = zmq_state.lock().unwrap();
-                let messages: Vec<serde_json::Value> = s
-                    .messages
-                    .iter()
-                    .map(|m| {
-                        serde_json::json!({
-                            "topic": m.topic,
-                            "body_hex": m.body_hex,
-                            "body_size": m.body_size,
-                            "sequence": m.sequence,
-                            "timestamp": m.timestamp,
-                            "event_hash": m.event_hash,
-                        })
-                    })
-                    .collect();
-                let result = serde_json::json!({
-                    "connected": s.connected,
-                    "address": s.address,
-                    "buffer_limit": s.buffer_limit,
-                    "messages": messages,
+                let since = query_param_u64(&query, "since").unwrap_or(0);
+                let wait_ms = query_param_u64(&query, "wait_ms")
+                    .unwrap_or(0)
+                    .clamp(0, 30_000);
+                let state = Arc::clone(&zmq_state);
+                std::thread::spawn(move || {
+                    if wait_ms > 0 {
+                        let timeout = Duration::from_millis(wait_ms);
+                        let start = Instant::now();
+                        while start.elapsed() < timeout {
+                            let has_new = {
+                                let s = state.lock().unwrap();
+                                s.messages
+                                    .back()
+                                    .is_some_and(|m| m.cursor > since)
+                            };
+                            if has_new {
+                                break;
+                            }
+                            std::thread::sleep(Duration::from_millis(50));
+                        }
+                    }
+                    let result = zmq_messages_response(&state, since);
+                    responder.respond(json_response(&result));
                 });
-                responder.respond(json_response(&result.to_string()));
                 return;
             }
 
@@ -232,4 +236,44 @@ fn query_param_u64(query: &str, key: &str) -> Option<u64> {
             (k == key).then_some(percent_decode(v))
         })
         .and_then(|v| v.parse::<u64>().ok())
+}
+
+fn zmq_messages_response(zmq_state: &Arc<Mutex<ZmqState>>, since: u64) -> String {
+    let s = zmq_state.lock().unwrap();
+    let mut truncated = false;
+    let messages: Vec<serde_json::Value> = s
+        .messages
+        .iter()
+        .filter(|m| m.cursor > since)
+        .map(|m| {
+            serde_json::json!({
+                "cursor": m.cursor,
+                "topic": m.topic,
+                "body_hex": m.body_hex,
+                "body_size": m.body_size,
+                "sequence": m.sequence,
+                "timestamp": m.timestamp,
+                "event_hash": m.event_hash,
+            })
+        })
+        .collect();
+    if since > 0
+        && !messages.is_empty()
+        && s.messages
+            .iter()
+            .find(|m| m.cursor > since)
+            .is_some_and(|m| m.cursor > since.saturating_add(1))
+    {
+        truncated = true;
+    }
+    let cursor = s.messages.back().map_or(0, |m| m.cursor);
+    serde_json::json!({
+        "connected": s.connected,
+        "address": s.address,
+        "buffer_limit": s.buffer_limit,
+        "cursor": cursor,
+        "truncated": truncated,
+        "messages": messages,
+    })
+    .to_string()
 }

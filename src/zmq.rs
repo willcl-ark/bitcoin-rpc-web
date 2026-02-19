@@ -6,6 +6,7 @@ use sha2::{Digest, Sha256};
 use tracing::{debug, warn};
 
 pub struct ZmqMessage {
+    pub cursor: u64,
     pub topic: String,
     pub body_hex: String,
     pub body_full_hex: Option<String>,
@@ -19,6 +20,7 @@ pub struct ZmqState {
     pub connected: bool,
     pub address: String,
     pub buffer_limit: usize,
+    pub next_cursor: u64,
     pub messages: VecDeque<ZmqMessage>,
 }
 
@@ -28,6 +30,7 @@ impl Default for ZmqState {
             connected: false,
             address: String::new(),
             buffer_limit: crate::rpc::DEFAULT_ZMQ_BUFFER_LIMIT,
+            next_cursor: 1,
             messages: VecDeque::new(),
         }
     }
@@ -112,7 +115,10 @@ pub fn start_zmq_subscriber(address: &str, state: Arc<Mutex<ZmqState>>) -> ZmqHa
             if s.messages.len() >= limit {
                 s.messages.pop_front();
             }
+            let cursor = s.next_cursor;
+            s.next_cursor = s.next_cursor.saturating_add(1);
             s.messages.push_back(ZmqMessage {
+                cursor,
                 topic,
                 body_hex,
                 body_full_hex,
