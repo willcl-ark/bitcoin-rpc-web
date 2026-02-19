@@ -43,7 +43,7 @@
                 pkgs.wrapGAppsHook3
               ];
             buildInputs =
-              [ pkgs.openssl ]
+              [ pkgs.openssl pkgs.zeromq ]
               ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
                 pkgs.webkitgtk_4_1
                 pkgs.gtk3
@@ -72,6 +72,7 @@
             cargo-deny
             cargo-edit
             cargo-watch
+            zeromq
           ]
           ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
             webkitgtk_4_1

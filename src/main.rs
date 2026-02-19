@@ -1,4 +1,6 @@
 use std::borrow::Cow;
+use std::collections::VecDeque;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -28,6 +30,7 @@ struct RpcConfig {
     user: String,
     password: String,
     wallet: String,
+    zmq_address: String,
 }
 
 fn json_response(body: &str) -> Response<Cow<'static, [u8]>> {
@@ -133,13 +136,13 @@ fn redact_password(body: &str) -> String {
     }
 }
 
-fn update_config(body: &str, config: &Arc<Mutex<RpcConfig>>) {
+fn update_config(body: &str, config: &Arc<Mutex<RpcConfig>>) -> bool {
     dbg_log!("[config] body: {:?}", redact_password(body));
     let msg: serde_json::Value = match serde_json::from_str(body) {
         Ok(v) => v,
         Err(e) => {
             dbg_log!("[config] parse error: {e}");
-            return;
+            return false;
         }
     };
     let mut cfg = config.lock().unwrap();
@@ -155,7 +158,15 @@ fn update_config(body: &str, config: &Arc<Mutex<RpcConfig>>) {
     if let Some(wallet) = msg["wallet"].as_str() {
         cfg.wallet = wallet.into();
     }
-    dbg_log!("[config] updated: url={:?} user={:?} wallet={:?}", cfg.url, cfg.user, cfg.wallet);
+    let mut zmq_changed = false;
+    if let Some(addr) = msg["zmq_address"].as_str() {
+        if cfg.zmq_address != addr {
+            cfg.zmq_address = addr.into();
+            zmq_changed = true;
+        }
+    }
+    dbg_log!("[config] updated: url={:?} user={:?} wallet={:?} zmq={:?}", cfg.url, cfg.user, cfg.wallet, cfg.zmq_address);
+    zmq_changed
 }
 
 fn basic_auth(user: &str, password: &str) -> String {
@@ -208,6 +219,115 @@ fn percent_decode(input: &str) -> String {
         i += 1;
     }
     String::from_utf8_lossy(&out).to_string()
+}
+
+// --- ZMQ subscriber ---
+
+struct ZmqMessage {
+    topic: String,
+    body_hex: String,
+    body_size: usize,
+    sequence: u32,
+    timestamp: u64,
+}
+
+struct ZmqState {
+    connected: bool,
+    address: String,
+    messages: VecDeque<ZmqMessage>,
+}
+
+struct ZmqHandle {
+    shutdown: Arc<AtomicBool>,
+    thread: std::thread::JoinHandle<()>,
+}
+
+fn hex_encode(data: &[u8]) -> String {
+    use std::fmt::Write;
+    let mut s = String::with_capacity(data.len() * 2);
+    for &b in data {
+        write!(s, "{b:02x}").unwrap();
+    }
+    s
+}
+
+fn start_zmq_subscriber(address: &str, state: Arc<Mutex<ZmqState>>) -> ZmqHandle {
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&shutdown);
+    let addr = address.to_string();
+
+    let thread = std::thread::spawn(move || {
+        let ctx = zmq2::Context::new();
+        let socket = match ctx.socket(zmq2::SUB) {
+            Ok(s) => s,
+            Err(e) => {
+                dbg_log!("[zmq] failed to create socket: {e}");
+                return;
+            }
+        };
+
+        socket.set_rcvtimeo(500).ok();
+        for topic in &["hashblock", "hashtx", "rawblock", "rawtx", "sequence"] {
+            socket.set_subscribe(topic.as_bytes()).ok();
+        }
+
+        if let Err(e) = socket.connect(&addr) {
+            dbg_log!("[zmq] connect failed ({addr}): {e}");
+            return;
+        }
+
+        dbg_log!("[zmq] connected to {addr}");
+        state.lock().unwrap().connected = true;
+
+        while !flag.load(Ordering::Relaxed) {
+            let parts = match socket.recv_multipart(0) {
+                Ok(p) => p,
+                Err(zmq2::Error::EAGAIN) => continue,
+                Err(e) => {
+                    dbg_log!("[zmq] recv error: {e}");
+                    break;
+                }
+            };
+
+            if parts.len() < 3 {
+                continue;
+            }
+
+            let topic = String::from_utf8_lossy(&parts[0]).to_string();
+            let body = &parts[1];
+            let body_hex = hex_encode(&body[..body.len().min(80)]);
+            let body_size = body.len();
+            let sequence = if parts[2].len() >= 4 {
+                u32::from_le_bytes([parts[2][0], parts[2][1], parts[2][2], parts[2][3]])
+            } else {
+                0
+            };
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+
+            dbg_log!("[zmq] {topic} seq={sequence} body={body_size}bytes");
+
+            let mut s = state.lock().unwrap();
+            if s.messages.len() >= 100 {
+                s.messages.pop_front();
+            }
+            s.messages.push_back(ZmqMessage {
+                topic, body_hex, body_size, sequence, timestamp,
+            });
+        }
+
+        state.lock().unwrap().connected = false;
+        dbg_log!("[zmq] subscriber stopped");
+    });
+
+    ZmqHandle { shutdown, thread }
+}
+
+fn stop_zmq_subscriber(handle: ZmqHandle) {
+    handle.shutdown.store(true, Ordering::Relaxed);
+    let _ = handle.thread.join();
 }
 
 const SAMPLE_RATE: u32 = 48000;
@@ -463,6 +583,8 @@ fn build_webview(
     config: Arc<Mutex<RpcConfig>>,
     music_tx: mpsc::Sender<MusicCmd>,
     music_state: Arc<Mutex<MusicState>>,
+    zmq_state: Arc<Mutex<ZmqState>>,
+    zmq_handle: Arc<Mutex<Option<ZmqHandle>>>,
 ) -> wry::WebViewBuilder<'static> {
     let cfg = Arc::clone(&config);
     wry::WebViewBuilder::new()
@@ -487,8 +609,38 @@ fn build_webview(
             if path == "/config" {
                 let body = percent_decode(&query);
                 dbg_log!("[proto] /config body: {:?}", redact_password(&body));
-                update_config(&body, &cfg);
+                let zmq_changed = update_config(&body, &cfg);
+                if zmq_changed {
+                    let mut handle = zmq_handle.lock().unwrap();
+                    if let Some(h) = handle.take() {
+                        stop_zmq_subscriber(h);
+                    }
+                    let addr = cfg.lock().unwrap().zmq_address.clone();
+                    if !addr.is_empty() {
+                        *handle = Some(start_zmq_subscriber(&addr, Arc::clone(&zmq_state)));
+                    }
+                }
                 responder.respond(json_response(r#"{"ok":true}"#));
+                return;
+            }
+
+            if path == "/zmq/messages" {
+                let s = zmq_state.lock().unwrap();
+                let messages: Vec<serde_json::Value> = s.messages.iter().map(|m| {
+                    serde_json::json!({
+                        "topic": m.topic,
+                        "body_hex": m.body_hex,
+                        "body_size": m.body_size,
+                        "sequence": m.sequence,
+                        "timestamp": m.timestamp,
+                    })
+                }).collect();
+                let result = serde_json::json!({
+                    "connected": s.connected,
+                    "address": s.address,
+                    "messages": messages,
+                });
+                responder.respond(json_response(&result.to_string()));
                 return;
             }
 
@@ -529,6 +681,7 @@ fn main() {
         user: String::new(),
         password: String::new(),
         wallet: String::new(),
+        zmq_address: String::new(),
     }));
 
     dbg_log!("[main] loading tunes");
@@ -536,8 +689,15 @@ fn main() {
     dbg_log!("[main] loaded {} tunes", tunes.len());
     let (music_tx, music_state) = start_music(tunes);
 
+    let zmq_state = Arc::new(Mutex::new(ZmqState {
+        connected: false,
+        address: String::new(),
+        messages: VecDeque::new(),
+    }));
+    let zmq_handle = Arc::new(Mutex::new(None));
+
     dbg_log!("[main] building webview");
-    let _webview = build_webview(config, music_tx, music_state).build_gtk(&vbox).unwrap();
+    let _webview = build_webview(config, music_tx, music_state, zmq_state, zmq_handle).build_gtk(&vbox).unwrap();
     dbg_log!("[main] webview built, showing window");
 
     window.connect_delete_event(|_, _| {
@@ -560,6 +720,8 @@ struct App {
     config: Arc<Mutex<RpcConfig>>,
     music_tx: mpsc::Sender<MusicCmd>,
     music_state: Arc<Mutex<MusicState>>,
+    zmq_state: Arc<Mutex<ZmqState>>,
+    zmq_handle: Arc<Mutex<Option<ZmqHandle>>>,
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -572,6 +734,8 @@ impl winit::application::ApplicationHandler for App {
             Arc::clone(&self.config),
             self.music_tx.clone(),
             Arc::clone(&self.music_state),
+            Arc::clone(&self.zmq_state),
+            Arc::clone(&self.zmq_handle),
         )
             .build(&window)
             .unwrap();
@@ -605,9 +769,16 @@ fn main() {
             user: String::new(),
             password: String::new(),
             wallet: String::new(),
+            zmq_address: String::new(),
         })),
         music_tx,
         music_state,
+        zmq_state: Arc::new(Mutex::new(ZmqState {
+            connected: false,
+            address: String::new(),
+            messages: VecDeque::new(),
+        })),
+        zmq_handle: Arc::new(Mutex::new(None)),
     };
     event_loop.run_app(&mut app).unwrap();
 }
