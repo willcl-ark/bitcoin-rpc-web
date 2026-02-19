@@ -1,10 +1,9 @@
 pub fn init() {
-    if std::env::var_os("RUST_LOG").is_none() {
-        return;
-    }
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("bitcoin_rpc_web=info"));
 
     let subscriber = tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_env_filter(env_filter)
         .with_writer(std::io::stdout)
         .with_target(true)
         .with_level(true)
