@@ -34,6 +34,28 @@ fn runtime_tuning() -> RuntimeTuning {
     }
 }
 
+struct AppContext {
+    config: Arc<Mutex<rpc::RpcConfig>>,
+    rpc_limiter: Arc<rpc_limiter::RpcLimiter>,
+    rpc_pool: Arc<thread_pool::ThreadPool>,
+    zmq_poll_pool: Arc<thread_pool::ThreadPool>,
+    music_runtime: Arc<music::MusicRuntime>,
+    zmq_state: Arc<zmq::ZmqSharedState>,
+    zmq_handle: Arc<Mutex<Option<zmq::ZmqHandle>>>,
+}
+
+fn build_app_context(tuning: &RuntimeTuning) -> AppContext {
+    AppContext {
+        config: Arc::new(Mutex::new(rpc::RpcConfig::default())),
+        rpc_limiter: rpc_limiter::RpcLimiter::new(tuning.rpc_threads),
+        rpc_pool: thread_pool::ThreadPool::new(tuning.rpc_threads),
+        zmq_poll_pool: thread_pool::ThreadPool::new(tuning.zmq_poll_threads),
+        music_runtime: Arc::new(music::start_music()),
+        zmq_state: Arc::new(zmq::ZmqSharedState::default()),
+        zmq_handle: Arc::new(Mutex::new(None)),
+    }
+}
+
 fn shutdown_zmq(zmq_handle: &Arc<Mutex<Option<zmq::ZmqHandle>>>) {
     let mut handle = zmq_handle.lock().unwrap();
     if let Some(h) = handle.take() {
@@ -58,27 +80,21 @@ fn main() {
     let vbox = gtk::Box::new(gtk::Orientation::Vertical, 0);
     window.add(&vbox);
 
-    let config = Arc::new(Mutex::new(rpc::RpcConfig::default()));
-    let rpc_limiter = rpc_limiter::RpcLimiter::new(tuning.rpc_threads);
-    let rpc_pool = thread_pool::ThreadPool::new(tuning.rpc_threads);
-    let zmq_poll_pool = thread_pool::ThreadPool::new(tuning.zmq_poll_threads);
-    let music_runtime = Arc::new(music::start_music());
-    let zmq_state = Arc::new(zmq::ZmqSharedState::default());
-    let zmq_handle = Arc::new(Mutex::new(None));
+    let app = build_app_context(&tuning);
 
     let _webview = protocol::build_webview(
-        config,
-        rpc_limiter,
-        rpc_pool,
-        zmq_poll_pool,
-        music_runtime,
-        zmq_state,
-        Arc::clone(&zmq_handle),
+        app.config,
+        app.rpc_limiter,
+        app.rpc_pool,
+        app.zmq_poll_pool,
+        app.music_runtime,
+        app.zmq_state,
+        Arc::clone(&app.zmq_handle),
     )
     .build_gtk(&vbox)
     .unwrap();
 
-    let zmq_handle_for_shutdown = Arc::clone(&zmq_handle);
+    let zmq_handle_for_shutdown = Arc::clone(&app.zmq_handle);
     window.connect_delete_event(move |_, _| {
         shutdown_zmq(&zmq_handle_for_shutdown);
         gtk::main_quit();
@@ -93,13 +109,7 @@ fn main() {
 struct App {
     window: Option<winit::window::Window>,
     webview: Option<wry::WebView>,
-    config: Arc<Mutex<rpc::RpcConfig>>,
-    rpc_limiter: Arc<rpc_limiter::RpcLimiter>,
-    rpc_pool: Arc<thread_pool::ThreadPool>,
-    zmq_poll_pool: Arc<thread_pool::ThreadPool>,
-    music_runtime: Arc<music::MusicRuntime>,
-    zmq_state: Arc<zmq::ZmqSharedState>,
-    zmq_handle: Arc<Mutex<Option<zmq::ZmqHandle>>>,
+    ctx: AppContext,
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -108,13 +118,13 @@ impl winit::application::ApplicationHandler for App {
         let attrs = winit::window::Window::default_attributes().with_title("Bitcoin Core RPC");
         let window = event_loop.create_window(attrs).unwrap();
         let webview = protocol::build_webview(
-            Arc::clone(&self.config),
-            Arc::clone(&self.rpc_limiter),
-            Arc::clone(&self.rpc_pool),
-            Arc::clone(&self.zmq_poll_pool),
-            Arc::clone(&self.music_runtime),
-            Arc::clone(&self.zmq_state),
-            Arc::clone(&self.zmq_handle),
+            Arc::clone(&self.ctx.config),
+            Arc::clone(&self.ctx.rpc_limiter),
+            Arc::clone(&self.ctx.rpc_pool),
+            Arc::clone(&self.ctx.zmq_poll_pool),
+            Arc::clone(&self.ctx.music_runtime),
+            Arc::clone(&self.ctx.zmq_state),
+            Arc::clone(&self.ctx.zmq_handle),
         )
         .build(&window)
         .unwrap();
@@ -129,7 +139,7 @@ impl winit::application::ApplicationHandler for App {
         event: winit::event::WindowEvent,
     ) {
         if let winit::event::WindowEvent::CloseRequested = event {
-            shutdown_zmq(&self.zmq_handle);
+            shutdown_zmq(&self.ctx.zmq_handle);
             event_loop.exit();
         }
     }
@@ -144,14 +154,8 @@ fn main() {
     let mut app = App {
         window: None,
         webview: None,
-        config: Arc::new(Mutex::new(rpc::RpcConfig::default())),
-        rpc_limiter: rpc_limiter::RpcLimiter::new(tuning.rpc_threads),
-        rpc_pool: thread_pool::ThreadPool::new(tuning.rpc_threads),
-        zmq_poll_pool: thread_pool::ThreadPool::new(tuning.zmq_poll_threads),
-        music_runtime: Arc::new(music::start_music()),
-        zmq_state: Arc::new(zmq::ZmqSharedState::default()),
-        zmq_handle: Arc::new(Mutex::new(None)),
+        ctx: build_app_context(&tuning),
     };
     event_loop.run_app(&mut app).unwrap();
-    shutdown_zmq(&app.zmq_handle);
+    shutdown_zmq(&app.ctx.zmq_handle);
 }
