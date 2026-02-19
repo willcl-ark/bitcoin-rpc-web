@@ -3,6 +3,7 @@
 let schema = null;
 let currentMethod = null;
 let dashInterval = null;
+let lastPeers = [];
 
 async function init() {
   const resp = await fetch("/openrpc.json");
@@ -165,6 +166,7 @@ function selectMethod(m) {
   if (link) link.classList.add("active");
 
   document.getElementById("dashboard").hidden = true;
+  document.getElementById("peer-view").hidden = true;
   stopDashboardPolling();
   document.getElementById("method-view").hidden = false;
   document.getElementById("method-name").textContent = m.name;
@@ -296,6 +298,7 @@ async function rpcCall(method, params) {
 
 function showDashboard() {
   document.getElementById("method-view").hidden = true;
+  document.getElementById("peer-view").hidden = true;
   document.getElementById("dashboard").hidden = false;
   document.querySelectorAll("#method-list .method.active").forEach((el) => el.classList.remove("active"));
   currentMethod = null;
@@ -400,10 +403,11 @@ function renderNetwork(n) {
 }
 
 function renderPeers(peers) {
+  lastPeers = peers;
   const tbody = document.querySelector("#dash-peer-table tbody");
   let html = "";
   for (const p of peers) {
-    html += "<tr>";
+    html += '<tr class="peer-row" data-peer-id="' + p.id + '">';
     html += "<td>" + esc(p.addr) + "</td>";
     html += "<td>" + esc(p.subver) + "</td>";
     html += "<td>" + (p.inbound ? "in" : "out") + "</td>";
@@ -411,6 +415,28 @@ function renderPeers(peers) {
     html += "</tr>";
   }
   tbody.innerHTML = html;
+  for (const row of tbody.querySelectorAll(".peer-row")) {
+    row.addEventListener("click", () => {
+      const id = Number(row.dataset.peerId);
+      const peer = lastPeers.find(p => p.id === id);
+      if (peer) showPeerDetail(peer);
+    });
+  }
+}
+
+function showPeerDetail(peer) {
+  document.getElementById("dashboard").hidden = true;
+  stopDashboardPolling();
+  document.getElementById("method-view").hidden = true;
+  document.getElementById("peer-view").hidden = false;
+  document.getElementById("peer-view-title").textContent = peer.addr;
+  const dl = document.getElementById("peer-view-dl");
+  let html = "";
+  for (const [key, val] of Object.entries(peer)) {
+    const display = typeof val === "object" ? JSON.stringify(val, null, 2) : String(val);
+    html += dd(key, display);
+  }
+  dl.innerHTML = html;
 }
 
 // --- ZMQ feed ---
