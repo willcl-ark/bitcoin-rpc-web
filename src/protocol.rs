@@ -84,15 +84,14 @@ pub fn build_webview(
 
             if path == "/allow-insecure-rpc" {
                 let allowed = rpc::allow_insecure();
-                responder.respond(json_response(&format!(r#"{{"allowed":{allowed}}}"#)));
+                responder.respond(json_value_response(serde_json::json!({ "allowed": allowed })));
                 return;
             }
 
             if path == "/features" {
-                responder.respond(json_response(&format!(
-                    r#"{{"audio":{}}}"#,
-                    music::is_enabled()
-                )));
+                responder.respond(json_value_response(serde_json::json!({
+                    "audio": music::is_enabled()
+                })));
                 return;
             }
 
@@ -178,8 +177,12 @@ fn json_response(body: &str) -> Response<Cow<'static, [u8]>> {
         .unwrap()
 }
 
+fn json_value_response(value: serde_json::Value) -> Response<Cow<'static, [u8]>> {
+    json_response(&value.to_string())
+}
+
 fn json_error_response(message: &str) -> Response<Cow<'static, [u8]>> {
-    json_response(&serde_json::json!({ "error": message }).to_string())
+    json_value_response(serde_json::json!({ "error": message }))
 }
 
 fn respond_once(
