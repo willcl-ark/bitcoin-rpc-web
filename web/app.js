@@ -9,6 +9,7 @@ let zmqConnected = false;
 let dashboardFetchInFlight = false;
 let dashboardFetchQueued = false;
 let zmqRefreshTimer = null;
+let zmqMessageLookup = new Map();
 const ZMQ_FAST_POLL_MS = 250;
 const ZMQ_SLOW_POLL_MS = 2000;
 const DASHBOARD_ZMQ_FALLBACK_MS = 15_000;
@@ -236,6 +237,7 @@ function selectMethod(m) {
   document.getElementById("peer-view").hidden = true;
   stopDashboardPolling();
   document.getElementById("method-view").hidden = false;
+  document.getElementById("execute").hidden = false;
   document.getElementById("method-name").textContent = m.name;
   document.getElementById("method-desc").textContent = m.description || "";
 
@@ -561,6 +563,38 @@ function showPeerDetail(peer) {
   dl.innerHTML = html;
 }
 
+async function showZmqRpcResult(title, description, run) {
+  document.getElementById("dashboard").hidden = true;
+  stopDashboardPolling();
+  document.getElementById("peer-view").hidden = true;
+  document.getElementById("method-view").hidden = false;
+  document.querySelectorAll("#method-list .method.active").forEach((el) => el.classList.remove("active"));
+  currentMethod = null;
+
+  document.getElementById("execute").hidden = true;
+  document.getElementById("method-name").textContent = title;
+  document.getElementById("method-desc").textContent = description;
+  document.getElementById("param-form").innerHTML = "";
+  const result = document.getElementById("result");
+  result.classList.remove("error");
+  result.classList.add("visible");
+  result.textContent = "Loading...";
+
+  try {
+    const resp = await run();
+    result.classList.remove("error");
+    if (resp && resp.error) {
+      result.classList.add("error");
+      result.textContent = JSON.stringify(resp.error, null, 2);
+    } else {
+      result.textContent = JSON.stringify(resp && resp.result !== undefined ? resp.result : resp, null, 2);
+    }
+  } catch (e) {
+    result.classList.add("error");
+    result.textContent = String(e);
+  }
+}
+
 // --- ZMQ feed ---
 
 let zmqTimer = null;
@@ -656,35 +690,85 @@ function zmqTopicClass(topic) {
   return "zmq-topic-meta";
 }
 
+function zmqRowAction(msg) {
+  const hash = msg.event_hash;
+  if (msg.topic === "hashblock" && hash) {
+    return {
+      title: `ZMQ hashblock ${hash}`,
+      description: "Triggered by ZMQ hashblock. RPC: getblockheader <hash> true",
+      run: () => rpcCall("getblockheader", [hash, true]),
+    };
+  }
+  if (msg.topic === "hashtx" && hash) {
+    return {
+      title: `ZMQ hashtx ${hash}`,
+      description: "Triggered by ZMQ hashtx. RPC: getrawtransaction <hash> 1",
+      run: () => rpcCall("getrawtransaction", [hash, 1]),
+    };
+  }
+  if (msg.topic === "rawblock" && hash) {
+    return {
+      title: `ZMQ rawblock ${hash}`,
+      description: "Triggered by ZMQ rawblock. RPC: getblock <hash> 1",
+      run: () => rpcCall("getblock", [hash, 1]),
+    };
+  }
+  if (msg.topic === "rawtx") {
+    const qs = `timestamp=${encodeURIComponent(String(msg.timestamp))}&sequence=${encodeURIComponent(String(msg.sequence))}`;
+    return {
+      title: `ZMQ rawtx seq=${msg.sequence}`,
+      description: "Triggered by ZMQ rawtx. RPC: decoderawtransaction <rawtx>",
+      run: () => fetch(`/zmq/decode-rawtx?${qs}`).then((r) => r.json()),
+    };
+  }
+  return null;
+}
+
+function handleZmqRowClick(id) {
+  const msg = zmqMessageLookup.get(id);
+  if (!msg) return;
+  const action = zmqRowAction(msg);
+  if (!action) return;
+  showZmqRpcResult(action.title, action.description, action.run);
+}
+
 function renderZmq(data) {
   const section = document.getElementById("dash-zmq");
   if (!data.connected || data.messages.length === 0) {
     section.hidden = true;
+    zmqMessageLookup = new Map();
     return;
   }
   section.hidden = false;
   const feed = document.getElementById("dash-zmq-feed");
+  zmqMessageLookup = new Map();
   let html = "";
   for (let i = data.messages.length - 1; i >= 0; i--) {
     const msg = data.messages[i];
     const time = formatUnixTime(msg.timestamp);
     const topic = msg.topic;
     const topicCls = zmqTopicClass(topic);
+    const rowId = `${msg.timestamp}-${msg.sequence}-${i}`;
+    const action = zmqRowAction(msg);
+    zmqMessageLookup.set(rowId, msg);
     let dataHtml;
-    if (topic === "hashblock" || topic === "hashtx") {
-      dataHtml = colorHexBytes(reverseHex(msg.body_hex));
+    if (msg.event_hash) {
+      dataHtml = colorHexBytes(msg.event_hash);
     } else if (topic === "rawblock" || topic === "rawtx") {
       dataHtml = esc(formatBytes(msg.body_size));
     } else {
       dataHtml = colorHexBytes(msg.body_hex);
     }
-    html += '<div class="zmq-row">'
+    html += '<div class="zmq-row' + (action ? ' zmq-clickable' : '') + '" data-zmq-id="' + esc(rowId) + '">'
       + '<span class="zmq-time">' + esc(time) + '</span>'
       + '<span class="zmq-topic ' + topicCls + '">' + esc(topic) + '</span>'
       + '<span class="zmq-data">' + dataHtml + '</span>'
       + '</div>';
   }
   feed.innerHTML = html;
+  for (const row of feed.querySelectorAll(".zmq-row.zmq-clickable")) {
+    row.addEventListener("click", () => handleZmqRowClick(row.dataset.zmqId));
+  }
 }
 
 // --- Music player ---

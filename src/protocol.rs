@@ -86,6 +86,39 @@ pub fn build_webview(
                 return;
             }
 
+            if path == "/zmq/decode-rawtx" {
+                let timestamp = query_param_u64(&query, "timestamp");
+                let sequence = query_param_u64(&query, "sequence");
+                let result = if let (Some(timestamp), Some(sequence)) = (timestamp, sequence) {
+                    let raw_hex = {
+                        let s = zmq_state.lock().unwrap();
+                        s.messages
+                            .iter()
+                            .rev()
+                            .find(|m| {
+                                m.topic == "rawtx"
+                                    && m.timestamp == timestamp
+                                    && m.sequence as u64 == sequence
+                            })
+                            .and_then(|m| m.body_full_hex.as_deref())
+                            .map(str::to_owned)
+                    };
+                    if let Some(raw_hex) = raw_hex {
+                        let body = serde_json::json!({
+                            "method": "decoderawtransaction",
+                            "params": [raw_hex],
+                        });
+                        rpc::do_rpc(&body.to_string(), &cfg)
+                    } else {
+                        r#"{"error":"rawtx message not found"}"#.to_string()
+                    }
+                } else {
+                    r#"{"error":"invalid rawtx selector"}"#.to_string()
+                };
+                responder.respond(json_response(&result));
+                return;
+            }
+
             if path == "/zmq/messages" {
                 let s = zmq_state.lock().unwrap();
                 let messages: Vec<serde_json::Value> = s
@@ -98,6 +131,7 @@ pub fn build_webview(
                             "body_size": m.body_size,
                             "sequence": m.sequence,
                             "timestamp": m.timestamp,
+                            "event_hash": m.event_hash,
                         })
                     })
                     .collect();
@@ -186,4 +220,16 @@ fn request_body(req: &wry::http::Request<Vec<u8>>, query: &str) -> String {
         }
     }
     percent_decode(query)
+}
+
+fn query_param_u64(query: &str, key: &str) -> Option<u64> {
+    query
+        .split('&')
+        .find_map(|pair| {
+            let mut iter = pair.splitn(2, '=');
+            let k = iter.next()?;
+            let v = iter.next().unwrap_or("");
+            (k == key).then_some(percent_decode(v))
+        })
+        .and_then(|v| v.parse::<u64>().ok())
 }

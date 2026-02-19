@@ -413,6 +413,14 @@ body {
   gap: 10px;
 }
 
+.zmq-row.zmq-clickable {
+  cursor: pointer;
+}
+
+.zmq-row.zmq-clickable:hover {
+  background: #1c2128;
+}
+
 .zmq-time {
   color: #6e7681;
   flex-shrink: 0;
