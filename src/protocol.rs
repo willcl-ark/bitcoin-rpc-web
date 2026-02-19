@@ -199,15 +199,14 @@ fn percent_decode(input: &str) -> String {
     let b = input.as_bytes();
     let mut i = 0;
     while i < b.len() {
-        if b[i] == b'%' && i + 2 < b.len() {
-            if let Ok(byte) =
+        if b[i] == b'%' && i + 2 < b.len()
+            && let Ok(byte) =
                 u8::from_str_radix(std::str::from_utf8(&b[i + 1..i + 3]).unwrap_or(""), 16)
             {
                 out.push(byte);
                 i += 3;
                 continue;
             }
-        }
         out.push(if b[i] == b'+' { b' ' } else { b[i] });
         i += 1;
     }

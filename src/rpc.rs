@@ -136,12 +136,11 @@ pub fn update_config(body: &str, config: &Arc<Mutex<RpcConfig>>) -> ConfigUpdate
         cfg.wallet = wallet.into();
     }
     let mut zmq_changed = false;
-    if let Some(addr) = msg["zmq_address"].as_str() {
-        if cfg.zmq_address != addr {
+    if let Some(addr) = msg["zmq_address"].as_str()
+        && cfg.zmq_address != addr {
             cfg.zmq_address = addr.into();
             zmq_changed = true;
         }
-    }
     if let Some(limit) = parse_usize(&msg["zmq_buffer_limit"]) {
         cfg.zmq_buffer_limit = limit.clamp(MIN_ZMQ_BUFFER_LIMIT, MAX_ZMQ_BUFFER_LIMIT);
     }
