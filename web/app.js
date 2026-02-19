@@ -4,7 +4,6 @@ let schema = null;
 let currentMethod = null;
 let dashInterval = null;
 let lastPeers = [];
-let allowInsecureRpc = false;
 let audioEnabled = true;
 
 async function init() {
@@ -14,11 +13,6 @@ async function init() {
     const r = await fetch("/features");
     const j = await r.json();
     audioEnabled = j.audio !== false;
-  } catch (_) {}
-  try {
-    const r = await fetch("/allow-insecure-rpc");
-    const j = await r.json();
-    allowInsecureRpc = j.allowed === true;
   } catch (_) {}
   loadConfig();
   await pushConfig();
@@ -85,32 +79,16 @@ function saveConfig() {
 }
 
 async function pushConfig() {
-  await fetch("/config?" + encodeURIComponent(JSON.stringify(getConfig())));
+  try {
+    const resp = await fetch("/config?" + encodeURIComponent(JSON.stringify(getConfig())));
+    return await resp.json();
+  } catch (_) {
+    return { ok: false };
+  }
 }
 
 function toggleConfig() {
   document.getElementById("config").classList.toggle("collapsed");
-}
-
-function isSafeRpcHost(urlStr) {
-  let host;
-  try {
-    host = new URL(urlStr).hostname;
-  } catch (_) {
-    return false;
-  }
-  if (host === "localhost") return true;
-  const parts = host.split(".");
-  if (parts.length !== 4) return false;
-  const octets = parts.map(Number);
-  if (octets.some(n => isNaN(n) || n < 0 || n > 255)) return false;
-  const [a, b] = octets;
-  if (a === 127) return true;
-  if (a === 10) return true;
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  if (a === 192 && b === 168) return true;
-  if (a === 100 && b >= 64 && b <= 127) return true;
-  return false;
 }
 
 function clearUrlError() {
@@ -130,14 +108,13 @@ function showUrlError(msg) {
 }
 
 async function connectClicked() {
-  const url = document.getElementById("cfg-url").value;
-  if (!allowInsecureRpc && !isSafeRpcHost(url)) {
+  const cfgResp = await pushConfig();
+  if (cfgResp.insecure_blocked) {
     showUrlError("Non-local RPC address blocked. Set DANGER_INSECURE_RPC=1 to override.");
     return;
   }
   clearUrlError();
   saveConfig();
-  await pushConfig();
   const ok = await loadWallets();
   updateStatus(ok);
   if (!document.getElementById("dashboard").hidden) startDashboardPolling();

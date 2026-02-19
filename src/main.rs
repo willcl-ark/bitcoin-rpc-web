@@ -7,6 +7,13 @@ mod rpc;
 mod rpc_limiter;
 mod zmq;
 
+fn shutdown_zmq(zmq_handle: &Arc<Mutex<Option<zmq::ZmqHandle>>>) {
+    let mut handle = zmq_handle.lock().unwrap();
+    if let Some(h) = handle.take() {
+        zmq::stop_zmq_subscriber(h);
+    }
+}
+
 #[cfg(target_os = "linux")]
 fn main() {
     use gtk::prelude::*;
@@ -33,11 +40,19 @@ fn main() {
     let zmq_handle = Arc::new(Mutex::new(None));
 
     let _webview =
-        protocol::build_webview(config, rpc_limiter, music_runtime, zmq_state, zmq_handle)
-            .build_gtk(&vbox)
-            .unwrap();
+        protocol::build_webview(
+            config,
+            rpc_limiter,
+            music_runtime,
+            zmq_state,
+            Arc::clone(&zmq_handle),
+        )
+        .build_gtk(&vbox)
+        .unwrap();
 
-    window.connect_delete_event(|_, _| {
+    let zmq_handle_for_shutdown = Arc::clone(&zmq_handle);
+    window.connect_delete_event(move |_, _| {
+        shutdown_zmq(&zmq_handle_for_shutdown);
         gtk::main_quit();
         gtk::glib::Propagation::Stop
     });
@@ -82,6 +97,7 @@ impl winit::application::ApplicationHandler for App {
         event: winit::event::WindowEvent,
     ) {
         if let winit::event::WindowEvent::CloseRequested = event {
+            shutdown_zmq(&self.zmq_handle);
             event_loop.exit();
         }
     }
@@ -102,4 +118,5 @@ fn main() {
         zmq_handle: Arc::new(Mutex::new(None)),
     };
     event_loop.run_app(&mut app).unwrap();
+    shutdown_zmq(&app.zmq_handle);
 }
