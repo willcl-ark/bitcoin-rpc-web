@@ -21,9 +21,6 @@ fn main() {
 
     logging::init();
 
-    // Work around WebKitGTK DMA-BUF renderer freeze on Wayland
-    unsafe { std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1") };
-
     gtk::init().unwrap();
 
     let window = gtk::Window::new(gtk::WindowType::Toplevel);
