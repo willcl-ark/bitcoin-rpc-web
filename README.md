@@ -2,6 +2,8 @@
 
 A lightweight desktop GUI for interacting with Bitcoin Core's JSON-RPC interface. Built with [wry](https://github.com/nicoreeves/nicoreeves.github.io) (WebView) and a vanilla HTML/JS frontend.
 
+![Dashboard](dashboard.png)
+
 ## Features
 
 - Browse all RPC methods from Bitcoin Core's OpenRPC schema, grouped by category
