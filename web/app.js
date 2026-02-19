@@ -10,6 +10,8 @@ let dashboardFetchInFlight = false;
 let dashboardFetchQueued = false;
 let zmqRefreshTimer = null;
 let zmqMessageLookup = new Map();
+let dashboardPollingGeneration = 0;
+let zmqPollingGeneration = 0;
 const ZMQ_FAST_POLL_MS = 250;
 const ZMQ_SLOW_POLL_MS = 2000;
 const DASHBOARD_ZMQ_FALLBACK_MS = 15_000;
@@ -383,13 +385,16 @@ function showDashboard() {
 }
 
 function startDashboardPolling() {
+  dashboardPollingGeneration += 1;
   stopDashboardPolling();
+  const generation = dashboardPollingGeneration;
   fetchDashboard();
-  scheduleDashboardPoll();
-  startZmqPolling();
+  scheduleDashboardPoll(generation);
+  startZmqPolling(generation);
 }
 
 function stopDashboardPolling() {
+  dashboardPollingGeneration += 1;
   if (dashTimer) {
     clearTimeout(dashTimer);
     dashTimer = null;
@@ -402,11 +407,13 @@ function dashboardPollMs() {
   return zmqConnected ? Math.max(configured, DASHBOARD_ZMQ_FALLBACK_MS) : configured;
 }
 
-function scheduleDashboardPoll() {
+function scheduleDashboardPoll(generation) {
   if (dashTimer) clearTimeout(dashTimer);
   dashTimer = setTimeout(async () => {
+    if (generation !== dashboardPollingGeneration) return;
     await fetchDashboard();
-    scheduleDashboardPoll();
+    if (generation !== dashboardPollingGeneration) return;
+    scheduleDashboardPoll(generation);
   }, dashboardPollMs());
 }
 
@@ -600,12 +607,8 @@ async function showZmqRpcResult(title, description, run) {
 let zmqTimer = null;
 let lastZmqCursor = "";
 
-function startZmqPolling() {
-  stopZmqPolling();
-  pollZmqLoop();
-}
-
 function stopZmqPolling() {
+  zmqPollingGeneration += 1;
   if (zmqTimer) {
     clearTimeout(zmqTimer);
     zmqTimer = null;
@@ -614,6 +617,12 @@ function stopZmqPolling() {
     clearTimeout(zmqRefreshTimer);
     zmqRefreshTimer = null;
   }
+}
+
+function startZmqPolling(dashboardGeneration) {
+  stopZmqPolling();
+  zmqPollingGeneration = dashboardGeneration;
+  pollZmqLoop(zmqPollingGeneration);
 }
 
 function zmqCursor(data) {
@@ -635,15 +644,17 @@ function zmqCursor(data) {
 function setZmqConnected(next) {
   if (zmqConnected === next) return;
   zmqConnected = next;
-  scheduleDashboardPoll();
+  scheduleDashboardPoll(dashboardPollingGeneration);
 }
 
-async function pollZmqLoop() {
+async function pollZmqLoop(generation) {
+  if (generation !== zmqPollingGeneration) return;
   const data = await fetchZmq();
+  if (generation !== zmqPollingGeneration) return;
   const connected = !!(data && data.connected);
   setZmqConnected(connected);
   const delay = connected ? ZMQ_FAST_POLL_MS : ZMQ_SLOW_POLL_MS;
-  zmqTimer = setTimeout(pollZmqLoop, delay);
+  zmqTimer = setTimeout(() => pollZmqLoop(generation), delay);
 }
 
 async function fetchZmq() {
@@ -653,7 +664,9 @@ async function fetchZmq() {
     const cursor = zmqCursor(data);
     const changed = cursor !== lastZmqCursor;
     lastZmqCursor = cursor;
-    renderZmq(data);
+    if (changed) {
+      renderZmq(data);
+    }
     if (changed && data.connected && Array.isArray(data.messages) && data.messages.length > 0) {
       requestDashboardRefreshSoon();
     }
