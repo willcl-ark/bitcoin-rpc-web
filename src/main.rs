@@ -1,16 +1,12 @@
 use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
-use rodio::{OutputStream, OutputStreamHandle, Sink, Source};
-use wry::http::header::{ACCESS_CONTROL_ALLOW_ORIGIN, CONTENT_TYPE};
 use wry::http::Response;
-use xmrs::import::amiga::amiga_module::AmigaModule;
-use xmrs::module::Module;
-use xmrsplayer::xmrsplayer::XmrsPlayer;
+use wry::http::header::{ACCESS_CONTROL_ALLOW_ORIGIN, CONTENT_TYPE};
+
+mod music;
 
 fn log_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -19,7 +15,11 @@ fn log_enabled() -> bool {
 
 fn allow_insecure() -> bool {
     static ALLOWED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ALLOWED.get_or_init(|| std::env::var("DANGER_INSECURE_RPC").ok().map_or(false, |v| v == "1"))
+    *ALLOWED.get_or_init(|| {
+        std::env::var("DANGER_INSECURE_RPC")
+            .ok()
+            .map_or(false, |v| v == "1")
+    })
 }
 
 fn is_safe_rpc_host(url: &str) -> bool {
@@ -33,7 +33,11 @@ fn is_safe_rpc_host(url: &str) -> bool {
             // strip port
             if after.starts_with('[') {
                 // IPv6: [::1]:8332
-                after.trim_start_matches('[').split(']').next().unwrap_or(after)
+                after
+                    .trim_start_matches('[')
+                    .split(']')
+                    .next()
+                    .unwrap_or(after)
             } else {
                 after.split(':').next().unwrap_or(after)
             }
@@ -45,7 +49,11 @@ fn is_safe_rpc_host(url: &str) -> bool {
         return true;
     }
 
-    let octets: Vec<u8> = match host.split('.').map(|s| s.parse::<u8>()).collect::<Result<Vec<_>, _>>() {
+    let octets: Vec<u8> = match host
+        .split('.')
+        .map(|s| s.parse::<u8>())
+        .collect::<Result<Vec<_>, _>>()
+    {
         Ok(v) if v.len() == 4 => v,
         _ => return false,
     };
@@ -55,7 +63,7 @@ fn is_safe_rpc_host(url: &str) -> bool {
         (127, _)              // loopback
         | (10, _)             // RFC 1918
         | (192, 168)          // RFC 1918
-        | (100, 64..=127)     // CGNAT (WireGuard/Tailscale)
+        | (100, 64..=127) // CGNAT (WireGuard/Tailscale)
     ) || (octets[0] == 172 && (16..=31).contains(&octets[1]))
 }
 
@@ -106,7 +114,11 @@ fn serve_asset(path: &str) -> Response<Cow<'static, [u8]>> {
 }
 
 fn do_rpc(body: &str, config: &Arc<Mutex<RpcConfig>>) -> String {
-    dbg_log!("[rpc] parsing body ({} bytes): {:?}", body.len(), &body[..body.len().min(200)]);
+    dbg_log!(
+        "[rpc] parsing body ({} bytes): {:?}",
+        body.len(),
+        &body[..body.len().min(200)]
+    );
     let msg: serde_json::Value = match serde_json::from_str(body) {
         Ok(v) => v,
         Err(e) => {
@@ -154,7 +166,11 @@ fn do_rpc(body: &str, config: &Arc<Mutex<RpcConfig>>) -> String {
         Ok(mut resp) => {
             let status = resp.status();
             let body = resp.body_mut().read_to_string().unwrap_or_default();
-            dbg_log!("[rpc] response HTTP {status} ({} bytes): {:?}", body.len(), &body[..body.len().min(200)]);
+            dbg_log!(
+                "[rpc] response HTTP {status} ({} bytes): {:?}",
+                body.len(),
+                &body[..body.len().min(200)]
+            );
             body
         }
         Err(e) => {
@@ -189,7 +205,10 @@ fn update_config(body: &str, config: &Arc<Mutex<RpcConfig>>) -> ConfigUpdateResu
         Ok(v) => v,
         Err(e) => {
             dbg_log!("[config] parse error: {e}");
-            return ConfigUpdateResult { zmq_changed: false, insecure_blocked: false };
+            return ConfigUpdateResult {
+                zmq_changed: false,
+                insecure_blocked: false,
+            };
         }
     };
     let mut cfg = config.lock().unwrap();
@@ -218,8 +237,17 @@ fn update_config(body: &str, config: &Arc<Mutex<RpcConfig>>) -> ConfigUpdateResu
             zmq_changed = true;
         }
     }
-    dbg_log!("[config] updated: url={:?} user={:?} wallet={:?} zmq={:?}", cfg.url, cfg.user, cfg.wallet, cfg.zmq_address);
-    ConfigUpdateResult { zmq_changed, insecure_blocked }
+    dbg_log!(
+        "[config] updated: url={:?} user={:?} wallet={:?} zmq={:?}",
+        cfg.url,
+        cfg.user,
+        cfg.wallet,
+        cfg.zmq_address
+    );
+    ConfigUpdateResult {
+        zmq_changed,
+        insecure_blocked,
+    }
 }
 
 fn basic_auth(user: &str, password: &str) -> String {
@@ -259,10 +287,9 @@ fn percent_decode(input: &str) -> String {
     let mut i = 0;
     while i < b.len() {
         if b[i] == b'%' && i + 2 < b.len() {
-            if let Ok(byte) = u8::from_str_radix(
-                std::str::from_utf8(&b[i + 1..i + 3]).unwrap_or(""),
-                16,
-            ) {
+            if let Ok(byte) =
+                u8::from_str_radix(std::str::from_utf8(&b[i + 1..i + 3]).unwrap_or(""), 16)
+            {
                 out.push(byte);
                 i += 3;
                 continue;
@@ -367,7 +394,11 @@ fn start_zmq_subscriber(address: &str, state: Arc<Mutex<ZmqState>>) -> ZmqHandle
                 s.messages.pop_front();
             }
             s.messages.push_back(ZmqMessage {
-                topic, body_hex, body_size, sequence, timestamp,
+                topic,
+                body_hex,
+                body_size,
+                sequence,
+                timestamp,
             });
         }
 
@@ -383,259 +414,9 @@ fn stop_zmq_subscriber(handle: ZmqHandle) {
     let _ = handle.thread.join();
 }
 
-const SAMPLE_RATE: u32 = 48000;
-
-struct Tune {
-    name: &'static str,
-    module: &'static Module,
-}
-
-fn load_tunes() -> Vec<Tune> {
-    let raw: &[(&str, &[u8])] = &[
-        ("Hymn to Aurora", include_bytes!("../tunes/hymn_to_aurora.mod")),
-        ("Musiklinjen", include_bytes!("../tunes/musiklinjen.mod")),
-        ("Playing with Sound", include_bytes!("../tunes/playingw.mod")),
-        ("Sundance", include_bytes!("../tunes/purple_motion_-_sundance.mod")),
-        ("Resii", include_bytes!("../tunes/resii.mod")),
-        ("Space Debris", include_bytes!("../tunes/space_debris.mod")),
-        ("Stardust Memories", include_bytes!("../tunes/stardstm.mod")),
-        ("Toy Story", include_bytes!("../tunes/toy_story.mod")),
-        ("Toy Title", include_bytes!("../tunes/toytitle.mod")),
-    ];
-    raw.iter()
-        .filter_map(|(name, data)| {
-            match AmigaModule::load(data) {
-                Ok(amiga) => {
-                    let module = Box::leak(Box::new(amiga.to_module()));
-                    Some(Tune { name, module })
-                }
-                Err(e) => {
-                    dbg_log!("[music] failed to load {name}: {e:?}");
-                    None
-                }
-            }
-        })
-        .collect()
-}
-
-struct ModSource {
-    player: XmrsPlayer<'static>,
-    buffer: Vec<f32>,
-    pos: usize,
-}
-
-impl ModSource {
-    fn new(module: &'static Module) -> Self {
-        let mut player = XmrsPlayer::new(module, SAMPLE_RATE as f32, 0, false);
-        player.set_max_loop_count(2);
-        player.amplification = 0.5;
-        Self { player, buffer: Vec::with_capacity(2048), pos: 0 }
-    }
-}
-
-impl Iterator for ModSource {
-    type Item = f32;
-    fn next(&mut self) -> Option<f32> {
-        if self.pos >= self.buffer.len() {
-            self.buffer.clear();
-            self.pos = 0;
-            for _ in 0..1024 {
-                match self.player.sample(true) {
-                    Some((l, r)) => {
-                        let mix = (l + r) * 0.5;
-                        self.buffer.push(mix);
-                        self.buffer.push(mix);
-                    }
-                    None => break,
-                }
-            }
-            if self.buffer.is_empty() {
-                return None;
-            }
-        }
-        let s = self.buffer[self.pos];
-        self.pos += 1;
-        Some(s)
-    }
-}
-
-impl Source for ModSource {
-    fn current_frame_len(&self) -> Option<usize> { None }
-    fn channels(&self) -> u16 { 2 }
-    fn sample_rate(&self) -> u32 { SAMPLE_RATE }
-    fn total_duration(&self) -> Option<Duration> { None }
-}
-
-enum MusicCmd {
-    PlayPause,
-    Next,
-    Prev,
-    SetVolume(f32),
-    ToggleMute,
-}
-
-struct MusicState {
-    current_track: usize,
-    track_count: usize,
-    track_name: String,
-    playing: bool,
-    volume: f32,
-    muted: bool,
-}
-
-fn make_sink(handle: &OutputStreamHandle, module: &'static Module, volume: f32) -> Sink {
-    let sink = Sink::try_new(handle).unwrap();
-    let source = ModSource::new(module);
-    sink.append(source);
-    sink.set_volume(volume);
-    sink
-}
-
-fn shuffle(tunes: &mut Vec<Tune>) {
-    let mut seed = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos() as u64;
-    for i in (1..tunes.len()).rev() {
-        seed ^= seed << 13;
-        seed ^= seed >> 7;
-        seed ^= seed << 17;
-        let j = (seed as usize) % (i + 1);
-        tunes.swap(i, j);
-    }
-}
-
-fn start_music(mut tunes: Vec<Tune>) -> (mpsc::Sender<MusicCmd>, Arc<Mutex<MusicState>>) {
-    shuffle(&mut tunes);
-    let (tx, rx) = mpsc::channel();
-    let state = Arc::new(Mutex::new(MusicState {
-        current_track: 0,
-        track_count: tunes.len(),
-        track_name: tunes.first().map_or("", |t| t.name).to_string(),
-        playing: true,
-        volume: 1.0,
-        muted: false,
-    }));
-    let st = Arc::clone(&state);
-
-    std::thread::spawn(move || {
-        let (_stream, handle) = match OutputStream::try_default() {
-            Ok(s) => s,
-            Err(e) => {
-                dbg_log!("[music] failed to open audio: {e}");
-                return;
-            }
-        };
-
-        let mut sink = make_sink(&handle, tunes[0].module, 1.0);
-
-        loop {
-            match rx.recv_timeout(Duration::from_millis(500)) {
-                Ok(cmd) => {
-                    let mut s = st.lock().unwrap();
-                    match cmd {
-                        MusicCmd::PlayPause => {
-                            if s.playing {
-                                sink.pause();
-                                s.playing = false;
-                            } else {
-                                sink.play();
-                                s.playing = true;
-                            }
-                        }
-                        MusicCmd::Next => {
-                            s.current_track = (s.current_track + 1) % tunes.len();
-                            s.track_name = tunes[s.current_track].name.to_string();
-                            s.playing = true;
-                            let vol = if s.muted { 0.0 } else { s.volume };
-                            drop(sink);
-                            sink = make_sink(&handle, tunes[s.current_track].module, vol);
-                        }
-                        MusicCmd::Prev => {
-                            s.current_track = if s.current_track == 0 {
-                                tunes.len() - 1
-                            } else {
-                                s.current_track - 1
-                            };
-                            s.track_name = tunes[s.current_track].name.to_string();
-                            s.playing = true;
-                            let vol = if s.muted { 0.0 } else { s.volume };
-                            drop(sink);
-                            sink = make_sink(&handle, tunes[s.current_track].module, vol);
-                        }
-                        MusicCmd::SetVolume(v) => {
-                            s.volume = v.clamp(0.0, 1.0);
-                            if !s.muted {
-                                sink.set_volume(s.volume);
-                            }
-                        }
-                        MusicCmd::ToggleMute => {
-                            s.muted = !s.muted;
-                            sink.set_volume(if s.muted { 0.0 } else { s.volume });
-                        }
-                    }
-                }
-                Err(mpsc::RecvTimeoutError::Timeout) => {
-                    if sink.empty() {
-                        let mut s = st.lock().unwrap();
-                        s.current_track = (s.current_track + 1) % tunes.len();
-                        s.track_name = tunes[s.current_track].name.to_string();
-                        let vol = if s.muted { 0.0 } else { s.volume };
-                        drop(sink);
-                        sink = make_sink(&handle, tunes[s.current_track].module, vol);
-                    }
-                }
-                Err(mpsc::RecvTimeoutError::Disconnected) => break,
-            }
-        }
-    });
-
-    (tx, state)
-}
-
-fn handle_music(
-    path: &str,
-    query: &str,
-    tx: &mpsc::Sender<MusicCmd>,
-    state: &Arc<Mutex<MusicState>>,
-) -> String {
-    match path {
-        "/music/status" => {
-            let s = state.lock().unwrap();
-            format!(
-                r#"{{"track":"{}","index":{},"count":{},"playing":{},"volume":{},"muted":{}}}"#,
-                s.track_name, s.current_track, s.track_count, s.playing, s.volume, s.muted
-            )
-        }
-        "/music/playpause" => {
-            let _ = tx.send(MusicCmd::PlayPause);
-            r#"{"ok":true}"#.into()
-        }
-        "/music/next" => {
-            let _ = tx.send(MusicCmd::Next);
-            r#"{"ok":true}"#.into()
-        }
-        "/music/prev" => {
-            let _ = tx.send(MusicCmd::Prev);
-            r#"{"ok":true}"#.into()
-        }
-        "/music/volume" => {
-            let v: f32 = percent_decode(query).parse().unwrap_or(0.5);
-            let _ = tx.send(MusicCmd::SetVolume(v));
-            r#"{"ok":true}"#.into()
-        }
-        "/music/mute" => {
-            let _ = tx.send(MusicCmd::ToggleMute);
-            r#"{"ok":true}"#.into()
-        }
-        _ => r#"{"error":"unknown music endpoint"}"#.into(),
-    }
-}
-
 fn build_webview(
     config: Arc<Mutex<RpcConfig>>,
-    music_tx: mpsc::Sender<MusicCmd>,
-    music_state: Arc<Mutex<MusicState>>,
+    music_runtime: Arc<music::MusicRuntime>,
     zmq_state: Arc<Mutex<ZmqState>>,
     zmq_handle: Arc<Mutex<Option<ZmqHandle>>>,
 ) -> wry::WebViewBuilder<'static> {
@@ -645,7 +426,11 @@ fn build_webview(
             let path = req.uri().path().to_string();
             let query = req.uri().query().unwrap_or("").to_string();
 
-            dbg_log!("[proto] {} path={path} query={}b", req.method(), query.len());
+            dbg_log!(
+                "[proto] {} path={path} query={}b",
+                req.method(),
+                query.len()
+            );
 
             if path == "/rpc" {
                 let body = percent_decode(&query);
@@ -684,23 +469,33 @@ fn build_webview(
 
             if path == "/allow-insecure-rpc" {
                 let allowed = allow_insecure();
-                responder.respond(json_response(
-                    &format!(r#"{{"allowed":{allowed}}}"#)
-                ));
+                responder.respond(json_response(&format!(r#"{{"allowed":{allowed}}}"#)));
+                return;
+            }
+
+            if path == "/features" {
+                responder.respond(json_response(&format!(
+                    r#"{{"audio":{}}}"#,
+                    music::is_enabled()
+                )));
                 return;
             }
 
             if path == "/zmq/messages" {
                 let s = zmq_state.lock().unwrap();
-                let messages: Vec<serde_json::Value> = s.messages.iter().map(|m| {
-                    serde_json::json!({
-                        "topic": m.topic,
-                        "body_hex": m.body_hex,
-                        "body_size": m.body_size,
-                        "sequence": m.sequence,
-                        "timestamp": m.timestamp,
+                let messages: Vec<serde_json::Value> = s
+                    .messages
+                    .iter()
+                    .map(|m| {
+                        serde_json::json!({
+                            "topic": m.topic,
+                            "body_hex": m.body_hex,
+                            "body_size": m.body_size,
+                            "sequence": m.sequence,
+                            "timestamp": m.timestamp,
+                        })
                     })
-                }).collect();
+                    .collect();
                 let result = serde_json::json!({
                     "connected": s.connected,
                     "address": s.address,
@@ -710,8 +505,9 @@ fn build_webview(
                 return;
             }
 
-            if path.starts_with("/music/") {
-                let result = handle_music(&path, &query, &music_tx, &music_state);
+            if let Some(result) =
+                music::handle_music_request(&path, &percent_decode(&query), &music_runtime)
+            {
                 responder.respond(json_response(&result));
                 return;
             }
@@ -750,10 +546,7 @@ fn main() {
         zmq_address: String::new(),
     }));
 
-    dbg_log!("[main] loading tunes");
-    let tunes = load_tunes();
-    dbg_log!("[main] loaded {} tunes", tunes.len());
-    let (music_tx, music_state) = start_music(tunes);
+    let music_runtime = Arc::new(music::start_music());
 
     let zmq_state = Arc::new(Mutex::new(ZmqState {
         connected: false,
@@ -763,7 +556,9 @@ fn main() {
     let zmq_handle = Arc::new(Mutex::new(None));
 
     dbg_log!("[main] building webview");
-    let _webview = build_webview(config, music_tx, music_state, zmq_state, zmq_handle).build_gtk(&vbox).unwrap();
+    let _webview = build_webview(config, music_runtime, zmq_state, zmq_handle)
+        .build_gtk(&vbox)
+        .unwrap();
     dbg_log!("[main] webview built, showing window");
 
     window.connect_delete_event(|_, _| {
@@ -784,8 +579,7 @@ struct App {
     window: Option<winit::window::Window>,
     webview: Option<wry::WebView>,
     config: Arc<Mutex<RpcConfig>>,
-    music_tx: mpsc::Sender<MusicCmd>,
-    music_state: Arc<Mutex<MusicState>>,
+    music_runtime: Arc<music::MusicRuntime>,
     zmq_state: Arc<Mutex<ZmqState>>,
     zmq_handle: Arc<Mutex<Option<ZmqHandle>>>,
 }
@@ -793,18 +587,16 @@ struct App {
 #[cfg(not(target_os = "linux"))]
 impl winit::application::ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        let attrs =
-            winit::window::Window::default_attributes().with_title("Bitcoin Core RPC");
+        let attrs = winit::window::Window::default_attributes().with_title("Bitcoin Core RPC");
         let window = event_loop.create_window(attrs).unwrap();
         let webview = build_webview(
             Arc::clone(&self.config),
-            self.music_tx.clone(),
-            Arc::clone(&self.music_state),
+            Arc::clone(&self.music_runtime),
             Arc::clone(&self.zmq_state),
             Arc::clone(&self.zmq_handle),
         )
-            .build(&window)
-            .unwrap();
+        .build(&window)
+        .unwrap();
         self.window = Some(window);
         self.webview = Some(webview);
     }
@@ -823,8 +615,7 @@ impl winit::application::ApplicationHandler for App {
 
 #[cfg(not(target_os = "linux"))]
 fn main() {
-    let tunes = load_tunes();
-    let (music_tx, music_state) = start_music(tunes);
+    let music_runtime = Arc::new(music::start_music());
 
     let event_loop = winit::event_loop::EventLoop::new().unwrap();
     let mut app = App {
@@ -837,8 +628,7 @@ fn main() {
             wallet: String::new(),
             zmq_address: String::new(),
         })),
-        music_tx,
-        music_state,
+        music_runtime,
         zmq_state: Arc::new(Mutex::new(ZmqState {
             connected: false,
             address: String::new(),

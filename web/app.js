@@ -5,10 +5,16 @@ let currentMethod = null;
 let dashInterval = null;
 let lastPeers = [];
 let allowInsecureRpc = false;
+let audioEnabled = true;
 
 async function init() {
   const resp = await fetch("/openrpc.json");
   schema = await resp.json();
+  try {
+    const r = await fetch("/features");
+    const j = await r.json();
+    audioEnabled = j.audio !== false;
+  } catch (_) {}
   try {
     const r = await fetch("/allow-insecure-rpc");
     const j = await r.json();
@@ -31,6 +37,12 @@ async function init() {
   });
   document.getElementById("cfg-url").addEventListener("input", clearUrlError);
   startDashboardPolling();
+  if (audioEnabled) {
+    initMusic();
+  } else {
+    const bar = document.getElementById("music-bar");
+    if (bar) bar.hidden = true;
+  }
 }
 
 function loadConfig() {
@@ -620,4 +632,3 @@ async function pollMusic() {
 }
 
 init();
-initMusic();

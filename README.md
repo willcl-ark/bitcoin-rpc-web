@@ -30,7 +30,7 @@ nix run
 
 Requires system dependencies for WebView:
 
-- **Linux:** GTK 3, WebKitGTK 4.1, libsoup 3, ALSA
+- **Linux:** GTK 3, WebKitGTK 4.1, libsoup 3
 - **macOS:** No extra dependencies
 
 ```
@@ -38,6 +38,16 @@ cargo run --release
 ```
 
 Configure the RPC connection (URL, user, password) via the gear icon in the sidebar. The app connects to `http://127.0.0.1:8332` by default.
+
+### Build Without Audio
+
+Audio is enabled by default behind the `audio` feature. To build without the music player and audio dependencies:
+
+```
+cargo run --release --no-default-features
+```
+
+With audio enabled (default), Linux additionally needs ALSA development libraries for `rodio`.
 
 ### ZMQ
 
