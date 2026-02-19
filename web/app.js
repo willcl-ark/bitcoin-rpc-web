@@ -2,9 +2,16 @@
 
 let schema = null;
 let currentMethod = null;
-let dashInterval = null;
+let dashTimer = null;
 let lastPeers = [];
 let audioEnabled = true;
+let zmqConnected = false;
+let dashboardFetchInFlight = false;
+let dashboardFetchQueued = false;
+let zmqRefreshTimer = null;
+const ZMQ_FAST_POLL_MS = 250;
+const ZMQ_SLOW_POLL_MS = 2000;
+const DASHBOARD_ZMQ_FALLBACK_MS = 15_000;
 
 function encodeHeaderJson(value) {
   return encodeURIComponent(JSON.stringify(value));
@@ -367,20 +374,45 @@ function showDashboard() {
 function startDashboardPolling() {
   stopDashboardPolling();
   fetchDashboard();
-  const ms = Number(document.getElementById("cfg-poll-interval").value) * 1000;
-  dashInterval = setInterval(fetchDashboard, ms);
+  scheduleDashboardPoll();
   startZmqPolling();
 }
 
 function stopDashboardPolling() {
-  if (dashInterval) {
-    clearInterval(dashInterval);
-    dashInterval = null;
+  if (dashTimer) {
+    clearTimeout(dashTimer);
+    dashTimer = null;
   }
   stopZmqPolling();
 }
 
+function dashboardPollMs() {
+  const configured = Math.max(1, Number(document.getElementById("cfg-poll-interval").value) || 5) * 1000;
+  return zmqConnected ? Math.max(configured, DASHBOARD_ZMQ_FALLBACK_MS) : configured;
+}
+
+function scheduleDashboardPoll() {
+  if (dashTimer) clearTimeout(dashTimer);
+  dashTimer = setTimeout(async () => {
+    await fetchDashboard();
+    scheduleDashboardPoll();
+  }, dashboardPollMs());
+}
+
+function requestDashboardRefreshSoon() {
+  if (zmqRefreshTimer) return;
+  zmqRefreshTimer = setTimeout(async () => {
+    zmqRefreshTimer = null;
+    await fetchDashboard();
+  }, 150);
+}
+
 async function fetchDashboard() {
+  if (dashboardFetchInFlight) {
+    dashboardFetchQueued = true;
+    return;
+  }
+  dashboardFetchInFlight = true;
   try {
     const [chain, net, mempool, peers, up, totals] = await Promise.all([
       rpcCall("getblockchaininfo", []),
@@ -398,6 +430,12 @@ async function fetchDashboard() {
     updateStatus(true);
   } catch (_) {
     updateStatus(false);
+  } finally {
+    dashboardFetchInFlight = false;
+    if (dashboardFetchQueued) {
+      dashboardFetchQueued = false;
+      fetchDashboard();
+    }
   }
 }
 
@@ -516,28 +554,70 @@ function showPeerDetail(peer) {
 
 // --- ZMQ feed ---
 
-let zmqInterval = null;
+let zmqTimer = null;
+let lastZmqCursor = "";
 
 function startZmqPolling() {
   stopZmqPolling();
-  fetchZmq();
-  zmqInterval = setInterval(fetchZmq, 2000);
+  pollZmqLoop();
 }
 
 function stopZmqPolling() {
-  if (zmqInterval) {
-    clearInterval(zmqInterval);
-    zmqInterval = null;
+  if (zmqTimer) {
+    clearTimeout(zmqTimer);
+    zmqTimer = null;
   }
+  if (zmqRefreshTimer) {
+    clearTimeout(zmqRefreshTimer);
+    zmqRefreshTimer = null;
+  }
+}
+
+function zmqCursor(data) {
+  if (!data || !Array.isArray(data.messages) || data.messages.length === 0) {
+    return `${data && data.connected ? "1" : "0"}|${data && data.address ? data.address : ""}|empty`;
+  }
+  const msg = data.messages[data.messages.length - 1];
+  return [
+    data.connected ? "1" : "0",
+    data.address || "",
+    msg.topic || "",
+    String(msg.sequence ?? ""),
+    String(msg.timestamp ?? ""),
+    String(msg.body_size ?? ""),
+    msg.body_hex || "",
+  ].join("|");
+}
+
+function setZmqConnected(next) {
+  if (zmqConnected === next) return;
+  zmqConnected = next;
+  scheduleDashboardPoll();
+}
+
+async function pollZmqLoop() {
+  const data = await fetchZmq();
+  const connected = !!(data && data.connected);
+  setZmqConnected(connected);
+  const delay = connected ? ZMQ_FAST_POLL_MS : ZMQ_SLOW_POLL_MS;
+  zmqTimer = setTimeout(pollZmqLoop, delay);
 }
 
 async function fetchZmq() {
   try {
     const resp = await fetch("/zmq/messages");
     const data = await resp.json();
+    const cursor = zmqCursor(data);
+    const changed = cursor !== lastZmqCursor;
+    lastZmqCursor = cursor;
     renderZmq(data);
+    if (changed && data.connected && Array.isArray(data.messages) && data.messages.length > 0) {
+      requestDashboardRefreshSoon();
+    }
+    return data;
   } catch (_) {
     document.getElementById("dash-zmq").hidden = true;
+    return null;
   }
 }
 
