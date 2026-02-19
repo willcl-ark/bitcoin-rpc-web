@@ -10,13 +10,17 @@ let dashboardFetchInFlight = false;
 let dashboardFetchQueued = false;
 let zmqRefreshTimer = null;
 let zmqMessageLookup = new Map();
+let zmqRenderTimer = null;
 let dashboardPollingGeneration = 0;
 let zmqPollingGeneration = 0;
 let pendingDashboardParts = new Set();
+let pendingZmqMessages = [];
 let peerById = new Map();
 let peerRows = new Map();
 let lastZmqCursor = 0;
 let lastPeersRefreshMs = 0;
+let lastCelebratedHashblockCursor = 0;
+let celebrationAudioCtx = null;
 const ZMQ_FAST_POLL_MS = 250;
 const ZMQ_SLOW_POLL_MS = 2000;
 const DASHBOARD_ZMQ_FALLBACK_MS = 15_000;
@@ -24,6 +28,7 @@ const DASHBOARD_PART_DEBOUNCE_MS = 250;
 const PEERS_REFRESH_MIN_MS = 10_000;
 const ZMQ_FEED_MAX_ROWS = 200;
 const ZMQ_LONG_POLL_WAIT_MS = 5_000;
+const ZMQ_RENDER_BATCH_MS = 200;
 
 function encodeHeaderJson(value) {
   return encodeURIComponent(JSON.stringify(value));
@@ -47,6 +52,7 @@ async function init() {
   document.getElementById("cfg-connect").addEventListener("click", connectClicked);
   document.getElementById("cfg-wallet").addEventListener("change", walletChanged);
   document.getElementById("cfg-zmq-buffer-limit").addEventListener("change", zmqBufferLimitChanged);
+  document.getElementById("cfg-hashblock-party").addEventListener("change", saveConfig);
   document.getElementById("execute").addEventListener("click", execute);
   document.getElementById("header-title").addEventListener("click", showDashboard);
   document.getElementById("cfg-poll-interval").addEventListener("change", () => {
@@ -80,6 +86,9 @@ function loadConfig() {
     if (cfg.pollInterval) document.getElementById("cfg-poll-interval").value = cfg.pollInterval;
     if (cfg.zmq_address) document.getElementById("cfg-zmq").value = cfg.zmq_address;
     if (cfg.zmq_buffer_limit) document.getElementById("cfg-zmq-buffer-limit").value = cfg.zmq_buffer_limit;
+    if (typeof cfg.hashblock_party === "boolean") {
+      document.getElementById("cfg-hashblock-party").checked = cfg.hashblock_party;
+    }
   } catch (_) {}
 }
 
@@ -92,7 +101,8 @@ function getConfig() {
     wallet: document.getElementById("cfg-wallet").value,
     pollInterval: document.getElementById("cfg-poll-interval").value,
     zmq_address: document.getElementById("cfg-zmq").value,
-    zmq_buffer_limit: Number.isFinite(zmqBufferLimit) ? zmqBufferLimit : 1000,
+    zmq_buffer_limit: Number.isFinite(zmqBufferLimit) ? zmqBufferLimit : 5000,
+    hashblock_party: document.getElementById("cfg-hashblock-party").checked,
   };
 }
 
@@ -752,6 +762,7 @@ function stopZmqPolling() {
     clearTimeout(zmqRefreshTimer);
     zmqRefreshTimer = null;
   }
+  clearPendingZmqRender();
 }
 
 function startZmqPolling(dashboardGeneration) {
@@ -772,7 +783,7 @@ async function pollZmqLoop(generation) {
   if (generation !== zmqPollingGeneration) return;
   const connected = !!(data && data.connected);
   setZmqConnected(connected);
-  const delay = connected ? 0 : ZMQ_SLOW_POLL_MS;
+  const delay = connected ? ZMQ_FAST_POLL_MS : ZMQ_SLOW_POLL_MS;
   zmqTimer = setTimeout(() => pollZmqLoop(generation), delay);
 }
 
@@ -786,17 +797,129 @@ async function fetchZmq() {
     }
     if (data.truncated) {
       clearZmqFeed();
+      clearPendingZmqRender();
     }
     if (Array.isArray(data.messages) && data.messages.length > 0) {
-      requestAnimationFrame(() => renderZmq(data));
+      maybeCelebrateHashblock(data.messages);
+      queueZmqRender(data.messages);
       queueDashboardPartRefresh(deriveDashboardParts(data.messages));
     }
-    if (!data.connected) requestAnimationFrame(() => renderZmq(data));
+    if (!data.connected) {
+      clearPendingZmqRender();
+      requestAnimationFrame(() => renderZmq(data));
+    }
     return data;
   } catch (_) {
     clearZmqFeed();
+    clearPendingZmqRender();
     return null;
   }
+}
+
+function queueZmqRender(messages) {
+  for (const msg of messages) pendingZmqMessages.push(msg);
+  if (zmqRenderTimer) return;
+  zmqRenderTimer = setTimeout(() => {
+    zmqRenderTimer = null;
+    flushZmqRender();
+  }, ZMQ_RENDER_BATCH_MS);
+}
+
+function flushZmqRender() {
+  if (pendingZmqMessages.length === 0) return;
+  const messages = pendingZmqMessages;
+  pendingZmqMessages = [];
+  requestAnimationFrame(() => renderZmq({ connected: true, messages }));
+}
+
+function clearPendingZmqRender() {
+  if (zmqRenderTimer) {
+    clearTimeout(zmqRenderTimer);
+    zmqRenderTimer = null;
+  }
+  pendingZmqMessages = [];
+}
+
+function maybeCelebrateHashblock(messages) {
+  if (!document.getElementById("cfg-hashblock-party").checked) return;
+  let newestCursor = lastCelebratedHashblockCursor;
+  let sawNewHashblock = false;
+  for (const msg of messages) {
+    if (msg.topic !== "hashblock") continue;
+    const cursor = Number(msg.cursor);
+    if (Number.isFinite(cursor)) {
+      if (cursor > lastCelebratedHashblockCursor) {
+        sawNewHashblock = true;
+        if (cursor > newestCursor) newestCursor = cursor;
+      }
+    } else {
+      sawNewHashblock = true;
+    }
+  }
+  if (!sawNewHashblock) return;
+  if (newestCursor > lastCelebratedHashblockCursor) {
+    lastCelebratedHashblockCursor = newestCursor;
+  }
+  triggerHashblockCelebration();
+}
+
+function triggerHashblockCelebration() {
+  spawnConfettiBurst();
+  playCelebrationChime();
+}
+
+function spawnConfettiBurst() {
+  const layer = document.getElementById("confetti-layer");
+  if (!layer) return;
+  const colors = ["#f59e0b", "#22c55e", "#3b82f6", "#ef4444", "#eab308", "#a855f7"];
+  const count = 42;
+  const width = Math.max(window.innerWidth, 320);
+  const height = Math.max(window.innerHeight, 320);
+  const frag = document.createDocumentFragment();
+  for (let i = 0; i < count; i++) {
+    const piece = document.createElement("span");
+    piece.className = "confetti-piece";
+    piece.style.left = `${Math.random() * width}px`;
+    piece.style.background = colors[Math.floor(Math.random() * colors.length)];
+    piece.style.transform = `rotate(${Math.random() * 360}deg)`;
+    const drift = (Math.random() - 0.5) * 220;
+    const drop = height + 80 + Math.random() * 120;
+    const spin = (Math.random() < 0.5 ? -1 : 1) * (480 + Math.random() * 420);
+    const duration = 1200 + Math.random() * 700;
+    piece.animate(
+      [
+        { transform: `translate3d(0,0,0) rotate(0deg)`, opacity: 1 },
+        { transform: `translate3d(${drift}px,${drop}px,0) rotate(${spin}deg)`, opacity: 0 },
+      ],
+      { duration, easing: "cubic-bezier(.2,.8,.2,1)", fill: "forwards" },
+    ).onfinish = () => piece.remove();
+    frag.appendChild(piece);
+  }
+  layer.appendChild(frag);
+}
+
+function playCelebrationChime() {
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx) return;
+  try {
+    if (!celebrationAudioCtx) celebrationAudioCtx = new Ctx();
+    if (celebrationAudioCtx.state === "suspended") celebrationAudioCtx.resume();
+    const t0 = celebrationAudioCtx.currentTime;
+    const notes = [523.25, 659.25, 783.99];
+    for (let i = 0; i < notes.length; i++) {
+      const osc = celebrationAudioCtx.createOscillator();
+      const gain = celebrationAudioCtx.createGain();
+      osc.type = "triangle";
+      osc.frequency.value = notes[i];
+      gain.gain.setValueAtTime(0, t0 + i * 0.08);
+      gain.gain.linearRampToValueAtTime(0.09, t0 + i * 0.08 + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + i * 0.08 + 0.18);
+      osc.connect(gain);
+      gain.connect(celebrationAudioCtx.destination);
+      osc.start(t0 + i * 0.08);
+      osc.stop(t0 + i * 0.08 + 0.2);
+    }
+  } catch (_) {}
 }
 
 function formatUnixTime(secs) {

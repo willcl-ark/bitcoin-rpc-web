@@ -5,6 +5,10 @@ use std::sync::{Arc, Condvar, Mutex};
 use sha2::{Digest, Sha256};
 use tracing::{debug, warn};
 
+const DEFAULT_ZMQ_SOCKET_RCVHWM: i32 = 100_000;
+const MIN_ZMQ_SOCKET_RCVHWM: i32 = 1_000;
+const MAX_ZMQ_SOCKET_RCVHWM: i32 = 1_000_000;
+
 pub struct ZmqMessage {
     pub cursor: u64,
     pub topic: String,
@@ -71,6 +75,12 @@ pub fn start_zmq_subscriber(address: &str, state: Arc<ZmqSharedState>) -> ZmqHan
         };
 
         socket.set_rcvtimeo(500).ok();
+        let rcvhwm = zmq_socket_rcvhwm();
+        if socket.set_rcvhwm(rcvhwm).is_err() {
+            warn!(rcvhwm, "failed to apply ZMQ subscriber rcvhwm");
+        } else {
+            debug!(rcvhwm, "configured ZMQ subscriber rcvhwm");
+        }
         for topic in &["hashblock", "hashtx", "rawblock", "rawtx", "sequence"] {
             socket.set_subscribe(topic.as_bytes()).ok();
         }
@@ -190,6 +200,14 @@ fn block_hash_from_header(header: &[u8]) -> String {
 fn mark_disconnected(state: &mut ZmqState) {
     state.connected = false;
     state.address.clear();
+}
+
+fn zmq_socket_rcvhwm() -> i32 {
+    std::env::var("ZMQ_SOCKET_RCVHWM")
+        .ok()
+        .and_then(|v| v.parse::<i32>().ok())
+        .unwrap_or(DEFAULT_ZMQ_SOCKET_RCVHWM)
+        .clamp(MIN_ZMQ_SOCKET_RCVHWM, MAX_ZMQ_SOCKET_RCVHWM)
 }
 
 #[cfg(test)]

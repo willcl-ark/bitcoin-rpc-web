@@ -34,8 +34,9 @@
         </label>
         <label>ZMQ address <input id="cfg-zmq" type="text" placeholder="tcp://127.0.0.1:28332"></label>
         <label>ZMQ buffer limit
-          <input id="cfg-zmq-buffer-limit" type="number" min="50" max="100000" step="50" value="1000">
+          <input id="cfg-zmq-buffer-limit" type="number" min="50" max="100000" step="50" value="5000">
         </label>
+        <label class="checkbox-label"><input id="cfg-hashblock-party" type="checkbox"> Celebrate hashblock (confetti + chime)</label>
         <button id="cfg-connect">Connect</button>
       </div>
       <input id="search" type="text" placeholder="Filter methods...">
@@ -94,6 +95,7 @@
     <input id="music-volume" type="range" min="0" max="100" value="100" title="Volume">
     <button id="music-mute" title="Mute / Unmute">&#128266;</button>
   </div>
+  <div id="confetti-layer" aria-hidden="true"></div>
   <script src="/app.js"></script>
 </body>
 </html>

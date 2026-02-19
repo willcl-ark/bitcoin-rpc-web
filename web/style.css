@@ -407,6 +407,24 @@ body {
   border-radius: 3px;
 }
 
+#confetti-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 999;
+}
+
+.confetti-piece {
+  position: absolute;
+  top: -16px;
+  width: 9px;
+  height: 15px;
+  border-radius: 2px;
+  opacity: 0.95;
+  will-change: transform, opacity;
+}
+
 .zmq-row {
   padding: 3px 0;
   display: flex;

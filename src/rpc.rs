@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use tracing::{debug, warn};
 
-pub const DEFAULT_ZMQ_BUFFER_LIMIT: usize = 1000;
+pub const DEFAULT_ZMQ_BUFFER_LIMIT: usize = 5000;
 pub const MIN_ZMQ_BUFFER_LIMIT: usize = 50;
 pub const MAX_ZMQ_BUFFER_LIMIT: usize = 100000;
 
