@@ -390,3 +390,56 @@ body {
 #result.visible {
   display: block;
 }
+
+/* --- Music player bar --- */
+
+#music-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 36px;
+  background: #161b22;
+  border-top: 1px solid #30363d;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  z-index: 100;
+}
+
+#music-bar button {
+  background: none;
+  border: none;
+  color: #8b949e;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+#music-bar button:hover {
+  color: #e6edf3;
+  background: #30363d;
+}
+
+#music-track {
+  flex: 1;
+  font-size: 12px;
+  color: #8b949e;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+#music-volume {
+  width: 80px;
+  accent-color: #58a6ff;
+  cursor: pointer;
+}
+
+#main {
+  padding-bottom: 44px;
+}

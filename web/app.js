@@ -279,4 +279,35 @@ async function rpcCall(method, params) {
   return resp.json();
 }
 
+// --- Music player ---
+
+function initMusic() {
+  document.getElementById("music-prev").addEventListener("click", () => musicCmd("prev"));
+  document.getElementById("music-play").addEventListener("click", () => musicCmd("playpause"));
+  document.getElementById("music-next").addEventListener("click", () => musicCmd("next"));
+  document.getElementById("music-mute").addEventListener("click", () => musicCmd("mute"));
+  document.getElementById("music-volume").addEventListener("input", (e) => {
+    fetch("/music/volume?" + (e.target.value / 100));
+  });
+  pollMusic();
+  setInterval(pollMusic, 2000);
+}
+
+async function musicCmd(action) {
+  await fetch("/music/" + action);
+  pollMusic();
+}
+
+async function pollMusic() {
+  try {
+    const resp = await fetch("/music/status");
+    const s = await resp.json();
+    document.getElementById("music-track").textContent = s.track;
+    document.getElementById("music-play").textContent = s.playing ? "\u23F8" : "\u25B6";
+    document.getElementById("music-mute").textContent = s.muted ? "\uD83D\uDD07" : "\uD83D\uDD0A";
+    document.getElementById("music-volume").value = Math.round(s.volume * 100);
+  } catch (_) {}
+}
+
 init();
+initMusic();

@@ -32,7 +32,8 @@
             filter = path: type:
               (craneLib.filterCargoSources path type)
               || (builtins.match ".*/web/.*" path != null)
-              || (builtins.match ".*/assets/.*" path != null);
+              || (builtins.match ".*/assets/.*" path != null)
+              || (builtins.match ".*/tunes/.*" path != null);
           };
           commonArgs = {
             inherit src;
@@ -48,6 +49,7 @@
                 pkgs.gtk3
                 pkgs.glib
                 pkgs.libsoup_3
+                pkgs.alsa-lib
               ]
               ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
                 pkgs.darwin.apple_sdk.frameworks.Security
@@ -76,6 +78,7 @@
             gtk3
             glib
             libsoup_3
+            alsa-lib
           ];
           env = {
             RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";
