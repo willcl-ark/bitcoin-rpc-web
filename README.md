@@ -15,6 +15,7 @@ A lightweight desktop GUI for interacting with Bitcoin Core's JSON-RPC interface
   - Clickable peer rows with full `getpeerinfo` detail view
   - Color-coded peer direction (green outbound, orange inbound)
 - Live ZMQ event feed showing `hashblock`, `hashtx`, `rawblock`, `rawtx`, and `sequence` notifications with hue-mapped hex byte coloring
+- RPC address validation — blocks non-local RPC connections by default (see [Remote RPC](#remote-rpc))
 - Built-in tracker music player for extra fun while crafting transactions
 
 ## Usage
@@ -53,6 +54,16 @@ zmqpubsequence=tcp://0.0.0.0:29000
 Use `127.0.0.1` instead of `0.0.0.0` if you only need local access. Then enter the ZMQ address (e.g. `tcp://127.0.0.1:29000`) in the config panel and press Connect. The ZMQ Events card will appear on the dashboard once messages arrive.
 
 Enable debug logging with `RUST_LOG=1`.
+
+### Remote RPC
+
+RPC credentials are sent via HTTP Basic Auth in the clear. By default, the app only allows connections to local and private network addresses (localhost, `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, and `100.64.0.0/10` for WireGuard/Tailscale). Attempting to connect to a public IP will be blocked with an error message.
+
+If you're connecting to a remote node over a trusted tunnel or don't have funds at risk, you can bypass this check:
+
+```
+DANGER_INSECURE_RPC=1 cargo run --release
+```
 
 ## Music
 

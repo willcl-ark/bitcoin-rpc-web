@@ -4,10 +4,16 @@ let schema = null;
 let currentMethod = null;
 let dashInterval = null;
 let lastPeers = [];
+let allowInsecureRpc = false;
 
 async function init() {
   const resp = await fetch("/openrpc.json");
   schema = await resp.json();
+  try {
+    const r = await fetch("/allow-insecure-rpc");
+    const j = await r.json();
+    allowInsecureRpc = j.allowed === true;
+  } catch (_) {}
   loadConfig();
   await pushConfig();
   const ok = await loadWallets();
@@ -23,6 +29,7 @@ async function init() {
     saveConfig();
     startDashboardPolling();
   });
+  document.getElementById("cfg-url").addEventListener("input", clearUrlError);
   startDashboardPolling();
 }
 
@@ -73,7 +80,50 @@ function toggleConfig() {
   document.getElementById("config").classList.toggle("collapsed");
 }
 
+function isSafeRpcHost(urlStr) {
+  let host;
+  try {
+    host = new URL(urlStr).hostname;
+  } catch (_) {
+    return false;
+  }
+  if (host === "localhost") return true;
+  const parts = host.split(".");
+  if (parts.length !== 4) return false;
+  const octets = parts.map(Number);
+  if (octets.some(n => isNaN(n) || n < 0 || n > 255)) return false;
+  const [a, b] = octets;
+  if (a === 127) return true;
+  if (a === 10) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  return false;
+}
+
+function clearUrlError() {
+  const input = document.getElementById("cfg-url");
+  const err = document.getElementById("cfg-url-error");
+  input.classList.remove("cfg-error");
+  err.hidden = true;
+  err.textContent = "";
+}
+
+function showUrlError(msg) {
+  const input = document.getElementById("cfg-url");
+  const err = document.getElementById("cfg-url-error");
+  input.classList.add("cfg-error");
+  err.textContent = msg;
+  err.hidden = false;
+}
+
 async function connectClicked() {
+  const url = document.getElementById("cfg-url").value;
+  if (!allowInsecureRpc && !isSafeRpcHost(url)) {
+    showUrlError("Non-local RPC address blocked. Set DANGER_INSECURE_RPC=1 to override.");
+    return;
+  }
+  clearUrlError();
   saveConfig();
   await pushConfig();
   const ok = await loadWallets();

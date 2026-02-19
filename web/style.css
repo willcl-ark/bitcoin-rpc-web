@@ -148,6 +148,17 @@ body {
   cursor: pointer;
 }
 
+#cfg-url.cfg-error {
+  border-color: #f85149;
+}
+
+.cfg-error {
+  display: block;
+  font-size: 11px;
+  color: #f85149;
+  margin-bottom: 4px;
+}
+
 #cfg-connect {
   width: 100%;
   margin-top: 8px;

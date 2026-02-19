@@ -17,6 +17,48 @@ fn log_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var_os("RUST_LOG").is_some())
 }
 
+fn allow_insecure() -> bool {
+    static ALLOWED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ALLOWED.get_or_init(|| std::env::var("DANGER_INSECURE_RPC").ok().map_or(false, |v| v == "1"))
+}
+
+fn is_safe_rpc_host(url: &str) -> bool {
+    let host = match url.find("://") {
+        Some(i) => {
+            let after = &url[i + 3..];
+            let after = after.split('/').next().unwrap_or(after);
+            let after = after.split('?').next().unwrap_or(after);
+            // strip user:pass@
+            let after = after.rsplit('@').next().unwrap_or(after);
+            // strip port
+            if after.starts_with('[') {
+                // IPv6: [::1]:8332
+                after.trim_start_matches('[').split(']').next().unwrap_or(after)
+            } else {
+                after.split(':').next().unwrap_or(after)
+            }
+        }
+        None => return false,
+    };
+
+    if host.eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+
+    let octets: Vec<u8> = match host.split('.').map(|s| s.parse::<u8>()).collect::<Result<Vec<_>, _>>() {
+        Ok(v) if v.len() == 4 => v,
+        _ => return false,
+    };
+
+    matches!(
+        (octets[0], octets[1]),
+        (127, _)              // loopback
+        | (10, _)             // RFC 1918
+        | (192, 168)          // RFC 1918
+        | (100, 64..=127)     // CGNAT (WireGuard/Tailscale)
+    ) || (octets[0] == 172 && (16..=31).contains(&octets[1]))
+}
+
 macro_rules! dbg_log {
     ($($arg:tt)*) => {
         if log_enabled() {
@@ -136,18 +178,29 @@ fn redact_password(body: &str) -> String {
     }
 }
 
-fn update_config(body: &str, config: &Arc<Mutex<RpcConfig>>) -> bool {
+struct ConfigUpdateResult {
+    zmq_changed: bool,
+    insecure_blocked: bool,
+}
+
+fn update_config(body: &str, config: &Arc<Mutex<RpcConfig>>) -> ConfigUpdateResult {
     dbg_log!("[config] body: {:?}", redact_password(body));
     let msg: serde_json::Value = match serde_json::from_str(body) {
         Ok(v) => v,
         Err(e) => {
             dbg_log!("[config] parse error: {e}");
-            return false;
+            return ConfigUpdateResult { zmq_changed: false, insecure_blocked: false };
         }
     };
     let mut cfg = config.lock().unwrap();
+    let mut insecure_blocked = false;
     if let Some(url) = msg["url"].as_str() {
-        cfg.url = url.into();
+        if is_safe_rpc_host(url) || allow_insecure() {
+            cfg.url = url.into();
+        } else {
+            dbg_log!("[config] blocked non-local RPC URL: {url}");
+            insecure_blocked = true;
+        }
     }
     if let Some(user) = msg["user"].as_str() {
         cfg.user = user.into();
@@ -166,7 +219,7 @@ fn update_config(body: &str, config: &Arc<Mutex<RpcConfig>>) -> bool {
         }
     }
     dbg_log!("[config] updated: url={:?} user={:?} wallet={:?} zmq={:?}", cfg.url, cfg.user, cfg.wallet, cfg.zmq_address);
-    zmq_changed
+    ConfigUpdateResult { zmq_changed, insecure_blocked }
 }
 
 fn basic_auth(user: &str, password: &str) -> String {
@@ -609,8 +662,8 @@ fn build_webview(
             if path == "/config" {
                 let body = percent_decode(&query);
                 dbg_log!("[proto] /config body: {:?}", redact_password(&body));
-                let zmq_changed = update_config(&body, &cfg);
-                if zmq_changed {
+                let result = update_config(&body, &cfg);
+                if result.zmq_changed {
                     let mut handle = zmq_handle.lock().unwrap();
                     if let Some(h) = handle.take() {
                         stop_zmq_subscriber(h);
@@ -620,7 +673,20 @@ fn build_webview(
                         *handle = Some(start_zmq_subscriber(&addr, Arc::clone(&zmq_state)));
                     }
                 }
-                responder.respond(json_response(r#"{"ok":true}"#));
+                let resp_body = if result.insecure_blocked {
+                    r#"{"ok":true,"insecure_blocked":true}"#
+                } else {
+                    r#"{"ok":true}"#
+                };
+                responder.respond(json_response(resp_body));
+                return;
+            }
+
+            if path == "/allow-insecure-rpc" {
+                let allowed = allow_insecure();
+                responder.respond(json_response(
+                    &format!(r#"{{"allowed":{allowed}}}"#)
+                ));
                 return;
             }
 
