@@ -31,22 +31,23 @@ pub fn build_webview(
             if path == "/rpc" {
                 let body = request_body(&req, &query);
                 if let Some(permit) = rpc_limiter.try_acquire() {
+                    let responder = Arc::new(Mutex::new(Some(responder)));
                     let cfg = Arc::clone(&cfg);
+                    let async_responder = Arc::clone(&responder);
                     if rpc_pool
                         .execute(move || {
                             let _permit = permit;
                             let result = rpc::do_rpc(&body, &cfg);
-                            responder.respond(json_response(&result));
+                            respond_once(&async_responder, json_response(&result));
                         })
                         .is_err()
                     {
                         warn!("rpc worker pool unavailable");
+                        respond_once(&responder, json_error_response("rpc worker pool unavailable"));
                     }
                 } else {
                     warn!("rpc request rejected due to in-flight limit");
-                    responder.respond(json_response(
-                        r#"{"error":"rpc worker pool saturated; try again"}"#,
-                    ));
+                    responder.respond(json_error_response("rpc worker pool saturated; try again"));
                 }
                 return;
             }
@@ -134,6 +135,8 @@ pub fn build_webview(
                     .unwrap_or(0)
                     .clamp(0, 30_000);
                 let state = Arc::clone(&zmq_state);
+                let responder = Arc::new(Mutex::new(Some(responder)));
+                let async_responder = Arc::clone(&responder);
                 if zmq_poll_pool
                     .execute(move || {
                         if wait_ms > 0 {
@@ -144,11 +147,12 @@ pub fn build_webview(
                             });
                         }
                         let result = zmq_messages_response(&state, since);
-                        responder.respond(json_response(&result));
+                        respond_once(&async_responder, json_response(&result));
                     })
                     .is_err()
                 {
                     warn!("zmq poll worker pool unavailable");
+                    respond_once(&responder, json_error_response("zmq poll worker pool unavailable"));
                 }
                 return;
             }
@@ -172,6 +176,20 @@ fn json_response(body: &str) -> Response<Cow<'static, [u8]>> {
         .header(ACCESS_CONTROL_ALLOW_ORIGIN, "*")
         .body(Cow::Owned(body.as_bytes().to_vec()))
         .unwrap()
+}
+
+fn json_error_response(message: &str) -> Response<Cow<'static, [u8]>> {
+    json_response(&serde_json::json!({ "error": message }).to_string())
+}
+
+fn respond_once(
+    responder: &Arc<Mutex<Option<wry::RequestAsyncResponder>>>,
+    response: Response<Cow<'static, [u8]>>,
+) {
+    if let Ok(mut guard) = responder.lock()
+        && let Some(async_responder) = guard.take() {
+            async_responder.respond(response);
+        }
 }
 
 fn serve_asset(path: &str) -> Response<Cow<'static, [u8]>> {
