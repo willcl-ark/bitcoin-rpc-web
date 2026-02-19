@@ -19,6 +19,15 @@
         <label>User <input id="cfg-user" type="text"></label>
         <label>Password <input id="cfg-password" type="password"></label>
         <label class="checkbox-label"><input id="cfg-save-pw" type="checkbox"> Save password</label>
+        <label>Poll interval
+          <select id="cfg-poll-interval">
+            <option value="2">2s</option>
+            <option value="5" selected>5s</option>
+            <option value="10">10s</option>
+            <option value="30">30s</option>
+            <option value="60">60s</option>
+          </select>
+        </label>
         <label>Wallet
           <select id="cfg-wallet"><option value="">(none)</option></select>
         </label>
@@ -28,7 +37,29 @@
       <nav id="method-list"></nav>
     </aside>
     <main id="main">
-      <div id="empty-state">Select a method from the sidebar</div>
+      <div id="dashboard">
+        <div id="dash-grid">
+          <section id="dash-chain" class="dash-card">
+            <h3>Blockchain</h3>
+            <dl></dl>
+          </section>
+          <section id="dash-mempool" class="dash-card">
+            <h3>Mempool</h3>
+            <dl></dl>
+          </section>
+          <section id="dash-network" class="dash-card">
+            <h3>Network</h3>
+            <dl></dl>
+          </section>
+          <section id="dash-peers" class="dash-card">
+            <h3>Peers</h3>
+            <table id="dash-peer-table">
+              <thead><tr><th>Address</th><th>Client</th><th>Dir</th><th>Ping</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </section>
+        </div>
+      </div>
       <div id="method-view" hidden>
         <h2 id="method-name"></h2>
         <p id="method-desc"></p>

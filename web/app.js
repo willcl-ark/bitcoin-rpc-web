@@ -2,6 +2,7 @@
 
 let schema = null;
 let currentMethod = null;
+let dashInterval = null;
 
 async function init() {
   const resp = await fetch("/openrpc.json");
@@ -16,6 +17,12 @@ async function init() {
   document.getElementById("cfg-connect").addEventListener("click", connectClicked);
   document.getElementById("cfg-wallet").addEventListener("change", walletChanged);
   document.getElementById("execute").addEventListener("click", execute);
+  document.getElementById("header-title").addEventListener("click", showDashboard);
+  document.getElementById("cfg-poll-interval").addEventListener("change", () => {
+    saveConfig();
+    startDashboardPolling();
+  });
+  startDashboardPolling();
 }
 
 function loadConfig() {
@@ -30,6 +37,7 @@ function loadConfig() {
       document.getElementById("cfg-save-pw").checked = true;
     }
     if (cfg.wallet) document.getElementById("cfg-wallet").value = cfg.wallet;
+    if (cfg.pollInterval) document.getElementById("cfg-poll-interval").value = cfg.pollInterval;
   } catch (_) {}
 }
 
@@ -39,6 +47,7 @@ function getConfig() {
     user: document.getElementById("cfg-user").value,
     password: document.getElementById("cfg-password").value,
     wallet: document.getElementById("cfg-wallet").value,
+    pollInterval: document.getElementById("cfg-poll-interval").value,
   };
 }
 
@@ -66,6 +75,7 @@ async function connectClicked() {
   await pushConfig();
   const ok = await loadWallets();
   updateStatus(ok);
+  if (!document.getElementById("dashboard").hidden) startDashboardPolling();
 }
 
 async function walletChanged() {
@@ -152,7 +162,8 @@ function selectMethod(m) {
   const link = document.querySelector(`#method-list .method[data-name="${m.name}"]`);
   if (link) link.classList.add("active");
 
-  document.getElementById("empty-state").hidden = true;
+  document.getElementById("dashboard").hidden = true;
+  stopDashboardPolling();
   document.getElementById("method-view").hidden = false;
   document.getElementById("method-name").textContent = m.name;
   document.getElementById("method-desc").textContent = m.description || "";
@@ -277,6 +288,125 @@ async function execute() {
 async function rpcCall(method, params) {
   const resp = await fetch("/rpc?" + encodeURIComponent(JSON.stringify({ method, params })));
   return resp.json();
+}
+
+// --- Dashboard ---
+
+function showDashboard() {
+  document.getElementById("method-view").hidden = true;
+  document.getElementById("dashboard").hidden = false;
+  document.querySelectorAll("#method-list .method.active").forEach((el) => el.classList.remove("active"));
+  currentMethod = null;
+  startDashboardPolling();
+}
+
+function startDashboardPolling() {
+  stopDashboardPolling();
+  fetchDashboard();
+  const ms = Number(document.getElementById("cfg-poll-interval").value) * 1000;
+  dashInterval = setInterval(fetchDashboard, ms);
+}
+
+function stopDashboardPolling() {
+  if (dashInterval) {
+    clearInterval(dashInterval);
+    dashInterval = null;
+  }
+}
+
+async function fetchDashboard() {
+  try {
+    const [chain, net, mempool, peers, up] = await Promise.all([
+      rpcCall("getblockchaininfo", []),
+      rpcCall("getnetworkinfo", []),
+      rpcCall("getmempoolinfo", []),
+      rpcCall("getpeerinfo", []),
+      rpcCall("uptime", []),
+    ]);
+    if (chain.result) renderChain(chain.result, up.result);
+    if (mempool.result) renderMempool(mempool.result);
+    if (net.result) renderNetwork(net.result);
+    if (peers.result) renderPeers(peers.result);
+    updateStatus(true);
+  } catch (_) {
+    updateStatus(false);
+  }
+}
+
+function esc(s) {
+  const d = document.createElement("span");
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function dd(label, value) {
+  return `<dt>${esc(label)}</dt><dd>${esc(String(value))}</dd>`;
+}
+
+function formatDuration(secs) {
+  const d = Math.floor(secs / 86400);
+  const h = Math.floor((secs % 86400) / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const parts = [];
+  if (d) parts.push(d + "d");
+  if (h) parts.push(h + "h");
+  parts.push(m + "m");
+  return parts.join(" ");
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1e6) return (bytes / 1e3).toFixed(1) + " KB";
+  if (bytes < 1e9) return (bytes / 1e6).toFixed(1) + " MB";
+  return (bytes / 1e9).toFixed(2) + " GB";
+}
+
+function renderChain(c, uptime) {
+  const dl = document.querySelector("#dash-chain dl");
+  let html = "";
+  html += dd("Chain", c.chain);
+  html += dd("Blocks", c.blocks.toLocaleString());
+  html += dd("Headers", c.headers.toLocaleString());
+  html += dd("Difficulty", Number(c.difficulty).toExponential(3));
+  html += dd("Progress", (c.verificationprogress * 100).toFixed(4) + "%");
+  html += dd("Pruned", c.pruned ? "yes" : "no");
+  html += dd("Disk size", formatBytes(c.size_on_disk));
+  if (uptime != null) html += dd("Uptime", formatDuration(uptime));
+  dl.innerHTML = html;
+}
+
+function renderMempool(m) {
+  const dl = document.querySelector("#dash-mempool dl");
+  let html = "";
+  html += dd("Transactions", m.size.toLocaleString());
+  html += dd("Size", formatBytes(m.bytes));
+  html += dd("Memory usage", formatBytes(m.usage));
+  html += dd("Min fee", m.mempoolminfee + " BTC/kvB");
+  dl.innerHTML = html;
+}
+
+function renderNetwork(n) {
+  const dl = document.querySelector("#dash-network dl");
+  let html = "";
+  html += dd("User agent", n.subversion);
+  html += dd("Protocol", n.protocolversion);
+  html += dd("Connections", n.connections + " (" + n.connections_in + " in / " + n.connections_out + " out)");
+  if (n.localservicesnames) html += dd("Services", n.localservicesnames.join(", "));
+  if (n.warnings) html += dd("Warnings", n.warnings);
+  dl.innerHTML = html;
+}
+
+function renderPeers(peers) {
+  const tbody = document.querySelector("#dash-peer-table tbody");
+  let html = "";
+  for (const p of peers) {
+    html += "<tr>";
+    html += "<td>" + esc(p.addr) + "</td>";
+    html += "<td>" + esc(p.subver) + "</td>";
+    html += "<td>" + (p.inbound ? "in" : "out") + "</td>";
+    html += "<td>" + (p.pingtime != null ? (p.pingtime * 1000).toFixed(0) + " ms" : "–") + "</td>";
+    html += "</tr>";
+  }
+  tbody.innerHTML = html;
 }
 
 // --- Music player ---

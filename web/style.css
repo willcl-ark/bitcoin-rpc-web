@@ -57,6 +57,11 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+#header-title:hover {
+  color: #58a6ff;
 }
 
 #cfg-toggle {
@@ -82,7 +87,7 @@ body {
   border-bottom: 1px solid #30363d;
   overflow: hidden;
   transition: max-height 0.2s, padding 0.2s, opacity 0.15s;
-  max-height: 300px;
+  max-height: 350px;
   opacity: 1;
 }
 
@@ -263,11 +268,84 @@ body {
   border-radius: 4px;
 }
 
-#empty-state {
-  color: #484f58;
-  font-size: 15px;
-  margin-top: 40vh;
-  text-align: center;
+/* --- Dashboard --- */
+
+#dash-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.dash-card {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.dash-card h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: #8b949e;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-bottom: 12px;
+}
+
+.dash-card dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+}
+
+.dash-card dt {
+  font-size: 12px;
+  color: #8b949e;
+}
+
+.dash-card dd {
+  font-size: 13px;
+  font-family: "SF Mono", "Fira Code", monospace;
+  color: #e6edf3;
+  text-align: right;
+}
+
+#dash-peers {
+  grid-column: 1 / -1;
+}
+
+#dash-peer-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-family: "SF Mono", "Fira Code", monospace;
+}
+
+#dash-peer-table th {
+  text-align: left;
+  color: #8b949e;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-bottom: 1px solid #30363d;
+}
+
+#dash-peer-table td {
+  padding: 3px 8px;
+  color: #c9d1d9;
+}
+
+#dash-peer-table tbody tr:hover {
+  background: #1c2128;
+}
+
+@media (max-width: 800px) {
+  #dash-grid {
+    grid-template-columns: 1fr;
+  }
+
+  #dash-peers {
+    grid-column: auto;
+  }
 }
 
 #method-name {
