@@ -150,7 +150,10 @@ pub fn start_zmq_subscriber(address: &str, state: Arc<ZmqSharedState>) -> ZmqHan
             state.changed.notify_all();
         }
 
-        state.state.lock().unwrap().connected = false;
+        {
+            let mut s = state.state.lock().unwrap();
+            mark_disconnected(&mut s);
+        }
         state.changed.notify_all();
         debug!("stopped ZMQ subscriber");
     });
@@ -182,4 +185,26 @@ fn block_hash_from_header(header: &[u8]) -> String {
     let mut hash = second.to_vec();
     hash.reverse();
     hex_encode(&hash)
+}
+
+fn mark_disconnected(state: &mut ZmqState) {
+    state.connected = false;
+    state.address.clear();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ZmqState, mark_disconnected};
+
+    #[test]
+    fn disconnect_clears_connection_address() {
+        let mut state = ZmqState {
+            connected: true,
+            address: "tcp://127.0.0.1:29000".to_string(),
+            ..ZmqState::default()
+        };
+        mark_disconnected(&mut state);
+        assert!(!state.connected);
+        assert!(state.address.is_empty());
+    }
 }
