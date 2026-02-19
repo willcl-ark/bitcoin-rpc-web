@@ -1,4 +1,5 @@
 use std::sync::{Arc, Mutex};
+use std::net::{IpAddr, Ipv4Addr};
 
 use tracing::{debug, warn};
 
@@ -161,19 +162,31 @@ fn is_safe_rpc_host(url: &str) -> bool {
         return true;
     }
 
-    let octets: Vec<u8> = match host
-        .split('.')
-        .map(|s| s.parse::<u8>())
-        .collect::<Result<Vec<_>, _>>()
-    {
-        Ok(v) if v.len() == 4 => v,
-        _ => return false,
+    let ip = match host.parse::<IpAddr>() {
+        Ok(ip) => ip,
+        Err(_) => return false,
     };
 
-    matches!(
-        (octets[0], octets[1]),
-        (127, _) | (10, _) | (192, 168) | (100, 64..=127)
-    ) || (octets[0] == 172 && (16..=31).contains(&octets[1]))
+    is_safe_rpc_ip(ip)
+}
+
+fn is_safe_rpc_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => v4.is_loopback() || v4.is_private() || is_cgnat(v4),
+        IpAddr::V6(v6) => {
+            v6.is_loopback()
+                || v6.is_unique_local()
+                || v6.is_unicast_link_local()
+                || v6
+                    .to_ipv4_mapped()
+                    .is_some_and(|mapped| is_safe_rpc_ip(IpAddr::V4(mapped)))
+        }
+    }
+}
+
+fn is_cgnat(v4: Ipv4Addr) -> bool {
+    let octets = v4.octets();
+    octets[0] == 100 && (64..=127).contains(&octets[1])
 }
 
 fn basic_auth(user: &str, password: &str) -> String {
@@ -205,4 +218,35 @@ fn base64_encode(data: &[u8]) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_safe_rpc_host;
+
+    #[test]
+    fn safe_ipv4_hosts_are_allowed() {
+        assert!(is_safe_rpc_host("http://127.0.0.1:8332"));
+        assert!(is_safe_rpc_host("http://10.0.0.2:8332"));
+        assert!(is_safe_rpc_host("http://172.16.1.2:8332"));
+        assert!(is_safe_rpc_host("http://192.168.1.2:8332"));
+        assert!(is_safe_rpc_host("http://100.64.1.2:8332"));
+        assert!(is_safe_rpc_host("http://localhost:8332"));
+    }
+
+    #[test]
+    fn safe_ipv6_hosts_are_allowed() {
+        assert!(is_safe_rpc_host("http://[::1]:8332"));
+        assert!(is_safe_rpc_host("http://[fd00::1]:8332"));
+        assert!(is_safe_rpc_host("http://[fe80::1]:8332"));
+        assert!(is_safe_rpc_host("http://[::ffff:127.0.0.1]:8332"));
+    }
+
+    #[test]
+    fn public_or_invalid_hosts_are_blocked() {
+        assert!(!is_safe_rpc_host("http://8.8.8.8:8332"));
+        assert!(!is_safe_rpc_host("http://[2001:4860:4860::8888]:8332"));
+        assert!(!is_safe_rpc_host("http://example.com:8332"));
+        assert!(!is_safe_rpc_host("not-a-url"));
+    }
 }
