@@ -323,16 +323,18 @@ function stopDashboardPolling() {
 
 async function fetchDashboard() {
   try {
-    const [chain, net, mempool, peers, up] = await Promise.all([
+    const [chain, net, mempool, peers, up, totals] = await Promise.all([
       rpcCall("getblockchaininfo", []),
       rpcCall("getnetworkinfo", []),
       rpcCall("getmempoolinfo", []),
       rpcCall("getpeerinfo", []),
       rpcCall("uptime", []),
+      rpcCall("getnettotals", []),
     ]);
     if (chain.result) renderChain(chain.result, up.result);
     if (mempool.result) renderMempool(mempool.result);
     if (net.result) renderNetwork(net.result);
+    if (totals.result) renderNetTotals(totals.result);
     if (peers.result) renderPeers(peers.result);
     updateStatus(true);
   } catch (_) {
@@ -399,6 +401,20 @@ function renderNetwork(n) {
   html += dd("Connections", n.connections + " (" + n.connections_in + " in / " + n.connections_out + " out)");
   if (n.localservicesnames) html += dd("Services", n.localservicesnames.join(", "));
   if (n.warnings) html += dd("Warnings", n.warnings);
+  dl.innerHTML = html;
+}
+
+function renderNetTotals(t) {
+  const dl = document.querySelector("#dash-nettotals dl");
+  let html = "";
+  html += dd("Received", formatBytes(t.totalbytesrecv));
+  html += dd("Sent", formatBytes(t.totalbytessent));
+  const up = t.uploadtarget;
+  if (up && up.target > 0) {
+    html += dd("Upload target", formatBytes(up.target));
+    html += dd("Left in cycle", formatBytes(up.bytes_left_in_cycle));
+    html += dd("Serve historical", up.serve_historical_blocks ? "yes" : "no");
+  }
   dl.innerHTML = html;
 }
 
