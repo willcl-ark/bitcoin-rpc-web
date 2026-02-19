@@ -33,6 +33,9 @@
           <select id="cfg-wallet"><option value="">(none)</option></select>
         </label>
         <label>ZMQ address <input id="cfg-zmq" type="text" placeholder="tcp://127.0.0.1:28332"></label>
+        <label>ZMQ buffer limit
+          <input id="cfg-zmq-buffer-limit" type="number" min="50" max="100000" step="50" value="1000">
+        </label>
         <button id="cfg-connect">Connect</button>
       </div>
       <input id="search" type="text" placeholder="Filter methods...">

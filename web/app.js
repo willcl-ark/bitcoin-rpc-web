@@ -34,6 +34,7 @@ async function init() {
   document.getElementById("cfg-toggle").addEventListener("click", toggleConfig);
   document.getElementById("cfg-connect").addEventListener("click", connectClicked);
   document.getElementById("cfg-wallet").addEventListener("change", walletChanged);
+  document.getElementById("cfg-zmq-buffer-limit").addEventListener("change", zmqBufferLimitChanged);
   document.getElementById("execute").addEventListener("click", execute);
   document.getElementById("header-title").addEventListener("click", showDashboard);
   document.getElementById("cfg-poll-interval").addEventListener("change", () => {
@@ -64,10 +65,12 @@ function loadConfig() {
     if (cfg.wallet) document.getElementById("cfg-wallet").value = cfg.wallet;
     if (cfg.pollInterval) document.getElementById("cfg-poll-interval").value = cfg.pollInterval;
     if (cfg.zmq_address) document.getElementById("cfg-zmq").value = cfg.zmq_address;
+    if (cfg.zmq_buffer_limit) document.getElementById("cfg-zmq-buffer-limit").value = cfg.zmq_buffer_limit;
   } catch (_) {}
 }
 
 function getConfig() {
+  const zmqBufferLimit = Number(document.getElementById("cfg-zmq-buffer-limit").value);
   return {
     url: document.getElementById("cfg-url").value,
     user: document.getElementById("cfg-user").value,
@@ -75,6 +78,7 @@ function getConfig() {
     wallet: document.getElementById("cfg-wallet").value,
     pollInterval: document.getElementById("cfg-poll-interval").value,
     zmq_address: document.getElementById("cfg-zmq").value,
+    zmq_buffer_limit: Number.isFinite(zmqBufferLimit) ? zmqBufferLimit : 1000,
   };
 }
 
@@ -140,6 +144,11 @@ async function connectClicked() {
 }
 
 async function walletChanged() {
+  saveConfig();
+  await pushConfig();
+}
+
+async function zmqBufferLimitChanged() {
   saveConfig();
   await pushConfig();
 }

@@ -45,6 +45,14 @@ pub fn build_webview(
             if path == "/config" {
                 let body = request_body(&req, &query);
                 let result = rpc::update_config(&body, &cfg);
+                {
+                    let limit = cfg.lock().unwrap().zmq_buffer_limit;
+                    let mut state = zmq_state.lock().unwrap();
+                    state.buffer_limit = limit;
+                    while state.messages.len() > state.buffer_limit {
+                        state.messages.pop_front();
+                    }
+                }
                 if result.zmq_changed {
                     let mut handle = zmq_handle.lock().unwrap();
                     if let Some(h) = handle.take() {
@@ -96,6 +104,7 @@ pub fn build_webview(
                 let result = serde_json::json!({
                     "connected": s.connected,
                     "address": s.address,
+                    "buffer_limit": s.buffer_limit,
                     "messages": messages,
                 });
                 responder.respond(json_response(&result.to_string()));

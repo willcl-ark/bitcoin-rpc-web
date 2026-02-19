@@ -15,6 +15,7 @@ pub struct ZmqMessage {
 pub struct ZmqState {
     pub connected: bool,
     pub address: String,
+    pub buffer_limit: usize,
     pub messages: VecDeque<ZmqMessage>,
 }
 
@@ -23,6 +24,7 @@ impl Default for ZmqState {
         Self {
             connected: false,
             address: String::new(),
+            buffer_limit: crate::rpc::DEFAULT_ZMQ_BUFFER_LIMIT,
             messages: VecDeque::new(),
         }
     }
@@ -91,7 +93,10 @@ pub fn start_zmq_subscriber(address: &str, state: Arc<Mutex<ZmqState>>) -> ZmqHa
                 .as_secs();
 
             let mut s = state.lock().unwrap();
-            if s.messages.len() >= 100 {
+            let limit = s
+                .buffer_limit
+                .clamp(crate::rpc::MIN_ZMQ_BUFFER_LIMIT, crate::rpc::MAX_ZMQ_BUFFER_LIMIT);
+            if s.messages.len() >= limit {
                 s.messages.pop_front();
             }
             s.messages.push_back(ZmqMessage {

@@ -3,12 +3,17 @@ use std::net::{IpAddr, Ipv4Addr};
 
 use tracing::{debug, warn};
 
+pub const DEFAULT_ZMQ_BUFFER_LIMIT: usize = 1000;
+pub const MIN_ZMQ_BUFFER_LIMIT: usize = 50;
+pub const MAX_ZMQ_BUFFER_LIMIT: usize = 100000;
+
 pub struct RpcConfig {
     pub url: String,
     pub user: String,
     pub password: String,
     pub wallet: String,
     pub zmq_address: String,
+    pub zmq_buffer_limit: usize,
 }
 
 impl Default for RpcConfig {
@@ -19,6 +24,7 @@ impl Default for RpcConfig {
             password: String::new(),
             wallet: String::new(),
             zmq_address: String::new(),
+            zmq_buffer_limit: DEFAULT_ZMQ_BUFFER_LIMIT,
         }
     }
 }
@@ -131,6 +137,9 @@ pub fn update_config(body: &str, config: &Arc<Mutex<RpcConfig>>) -> ConfigUpdate
             zmq_changed = true;
         }
     }
+    if let Some(limit) = parse_usize(&msg["zmq_buffer_limit"]) {
+        cfg.zmq_buffer_limit = limit.clamp(MIN_ZMQ_BUFFER_LIMIT, MAX_ZMQ_BUFFER_LIMIT);
+    }
 
     ConfigUpdateResult {
         zmq_changed,
@@ -220,9 +229,19 @@ fn base64_encode(data: &[u8]) -> String {
     out
 }
 
+fn parse_usize(value: &serde_json::Value) -> Option<usize> {
+    if let Some(n) = value.as_u64() {
+        return usize::try_from(n).ok();
+    }
+    value
+        .as_str()
+        .and_then(|s| s.trim().parse::<usize>().ok())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::is_safe_rpc_host;
+    use super::{MAX_ZMQ_BUFFER_LIMIT, MIN_ZMQ_BUFFER_LIMIT, RpcConfig, is_safe_rpc_host, update_config};
+    use std::sync::{Arc, Mutex};
 
     #[test]
     fn safe_ipv4_hosts_are_allowed() {
@@ -248,5 +267,16 @@ mod tests {
         assert!(!is_safe_rpc_host("http://[2001:4860:4860::8888]:8332"));
         assert!(!is_safe_rpc_host("http://example.com:8332"));
         assert!(!is_safe_rpc_host("not-a-url"));
+    }
+
+    #[test]
+    fn zmq_buffer_limit_is_clamped_to_safe_bounds() {
+        let cfg = Arc::new(Mutex::new(RpcConfig::default()));
+
+        update_config(r#"{"zmq_buffer_limit":10}"#, &cfg);
+        assert_eq!(cfg.lock().unwrap().zmq_buffer_limit, MIN_ZMQ_BUFFER_LIMIT);
+
+        update_config(r#"{"zmq_buffer_limit":200000}"#, &cfg);
+        assert_eq!(cfg.lock().unwrap().zmq_buffer_limit, MAX_ZMQ_BUFFER_LIMIT);
     }
 }
