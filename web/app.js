@@ -23,6 +23,7 @@ const DASHBOARD_ZMQ_FALLBACK_MS = 15_000;
 const DASHBOARD_PART_DEBOUNCE_MS = 250;
 const PEERS_REFRESH_MIN_MS = 10_000;
 const ZMQ_FEED_MAX_ROWS = 200;
+const ZMQ_LONG_POLL_WAIT_MS = 5_000;
 
 function encodeHeaderJson(value) {
   return encodeURIComponent(JSON.stringify(value));
@@ -742,7 +743,7 @@ async function pollZmqLoop(generation) {
 
 async function fetchZmq() {
   try {
-    const waitMs = zmqConnected ? ZMQ_FAST_POLL_MS : 0;
+    const waitMs = zmqConnected ? ZMQ_LONG_POLL_WAIT_MS : 0;
     const resp = await fetch(`/zmq/messages?since=${encodeURIComponent(String(lastZmqCursor))}&wait_ms=${waitMs}`);
     const data = await resp.json();
     if (typeof data.cursor === "number" && Number.isFinite(data.cursor)) {
@@ -763,24 +764,9 @@ async function fetchZmq() {
   }
 }
 
-function reverseHex(hex) {
-  return hex.match(/.{2}/g).reverse().join("");
-}
-
 function formatUnixTime(secs) {
   const d = new Date(secs * 1000);
   return d.toTimeString().slice(0, 8);
-}
-
-function colorHexBytes(hex) {
-  let html = "";
-  for (let i = 0; i < hex.length; i += 2) {
-    const pair = hex.slice(i, i + 2);
-    const val = parseInt(pair, 16);
-    const hue = Math.round(val * 360 / 256);
-    html += '<span style="color:hsl(' + hue + ',70%,65%)">' + esc(pair) + '</span>';
-  }
-  return html;
 }
 
 function zmqTopicClass(topic) {
@@ -850,11 +836,11 @@ function buildZmqRow(msg) {
 
   let dataHtml;
   if (msg.event_hash) {
-    dataHtml = colorHexBytes(msg.event_hash);
+    dataHtml = esc(msg.event_hash);
   } else if (topic === "rawblock" || topic === "rawtx") {
     dataHtml = esc(formatBytes(msg.body_size));
   } else {
-    dataHtml = colorHexBytes(msg.body_hex);
+    dataHtml = esc(msg.body_hex);
   }
 
   const row = document.createElement("div");
