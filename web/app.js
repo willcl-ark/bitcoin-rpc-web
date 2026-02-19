@@ -853,6 +853,11 @@ function buildZmqRow(msg) {
   return row;
 }
 
+function isZmqFeedNearBottom(feed) {
+  const gap = feed.scrollHeight - feed.scrollTop - feed.clientHeight;
+  return gap <= 24;
+}
+
 function renderZmq(data) {
   const section = document.getElementById("dash-zmq");
   const feed = document.getElementById("dash-zmq-feed");
@@ -871,15 +876,19 @@ function renderZmq(data) {
     return;
   }
   section.hidden = false;
+  const shouldFollowTail = isZmqFeedNearBottom(feed);
   for (let i = 0; i < data.messages.length; i++) {
     const row = buildZmqRow(data.messages[i]);
-    feed.prepend(row);
+    feed.appendChild(row);
   }
   while (feed.children.length > ZMQ_FEED_MAX_ROWS) {
-    const stale = feed.lastElementChild;
+    const stale = feed.firstElementChild;
     if (!stale) break;
     if (stale.dataset.zmqId) zmqMessageLookup.delete(stale.dataset.zmqId);
     stale.remove();
+  }
+  if (shouldFollowTail) {
+    feed.scrollTop = feed.scrollHeight;
   }
 }
 
