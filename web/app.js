@@ -410,7 +410,7 @@ function renderPeers(peers) {
     html += '<tr class="peer-row" data-peer-id="' + p.id + '">';
     html += "<td>" + esc(p.addr) + "</td>";
     html += "<td>" + esc(p.subver) + "</td>";
-    html += "<td>" + (p.inbound ? "in" : "out") + "</td>";
+    html += '<td class="' + (p.inbound ? "peer-in" : "peer-out") + '">' + (p.inbound ? "in" : "out") + "</td>";
     html += "<td>" + (p.pingtime != null ? (p.pingtime * 1000).toFixed(0) + " ms" : "–") + "</td>";
     html += "</tr>";
   }

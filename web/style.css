@@ -334,6 +334,9 @@ body {
   color: #c9d1d9;
 }
 
+#dash-peer-table .peer-out { color: #3fb950; }
+#dash-peer-table .peer-in  { color: #f0883e; }
+
 #dash-peer-table tbody tr {
   cursor: pointer;
 }
