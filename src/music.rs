@@ -32,6 +32,7 @@ mod imp {
     use std::time::Duration;
 
     use rodio::{OutputStream, OutputStreamHandle, Sink, Source};
+    use tracing::{debug, warn};
     use xmrs::import::amiga::amiga_module::AmigaModule;
     use xmrs::module::Module;
     use xmrsplayer::xmrsplayer::XmrsPlayer;
@@ -136,6 +137,7 @@ mod imp {
     pub(super) fn start_music() -> InnerRuntime {
         let mut tunes = load_tunes();
         shuffle(&mut tunes);
+        debug!(tracks = tunes.len(), "initialized music runtime");
 
         let (tx, rx) = mpsc::channel();
         let state = Arc::new(Mutex::new(MusicState {
@@ -155,7 +157,10 @@ mod imp {
 
             let (_stream, handle) = match OutputStream::try_default() {
                 Ok(s) => s,
-                Err(_) => return,
+                Err(e) => {
+                    warn!(error = %e, "failed to open default audio output");
+                    return;
+                }
             };
 
             let mut sink = make_sink(&handle, tunes[0].module, 1.0);
@@ -291,7 +296,10 @@ mod imp {
                     let module = Box::leak(Box::new(amiga.to_module()));
                     Some(Tune { name, module })
                 }
-                Err(_) => None,
+                Err(e) => {
+                    warn!(track = *name, error = ?e, "failed to load module track");
+                    None
+                }
             })
             .collect()
     }

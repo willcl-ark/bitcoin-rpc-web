@@ -1,5 +1,7 @@
 use std::sync::{Arc, Mutex};
 
+use tracing::{debug, warn};
+
 pub struct RpcConfig {
     pub url: String,
     pub user: String,
@@ -35,9 +37,13 @@ pub fn allow_insecure() -> bool {
 }
 
 pub fn do_rpc(body: &str, config: &Arc<Mutex<RpcConfig>>) -> String {
+    debug!(bytes = body.len(), "rpc request received");
     let msg: serde_json::Value = match serde_json::from_str(body) {
         Ok(v) => v,
-        Err(e) => return format!(r#"{{"error":"{e}"}}"#),
+        Err(e) => {
+            warn!(error = %e, "rpc request JSON parse failed");
+            return format!(r#"{{"error":"{e}"}}"#);
+        }
     };
 
     let method = msg["method"].as_str().unwrap_or("");
@@ -67,14 +73,23 @@ pub fn do_rpc(body: &str, config: &Arc<Mutex<RpcConfig>>) -> String {
         .new_agent();
 
     let payload = envelope.to_string();
+    debug!(method, url = %url, "rpc POST");
     match agent
         .post(&url)
         .header("Authorization", &basic_auth(&user, &password))
         .content_type("application/json")
         .send(payload.as_bytes())
     {
-        Ok(mut resp) => resp.body_mut().read_to_string().unwrap_or_default(),
-        Err(e) => format!(r#"{{"error":"{}"}}"#, e),
+        Ok(mut resp) => {
+            let status = resp.status();
+            let out = resp.body_mut().read_to_string().unwrap_or_default();
+            debug!(method, status = %status, bytes = out.len(), "rpc response");
+            out
+        }
+        Err(e) => {
+            warn!(method, error = %e, "rpc transport error");
+            format!(r#"{{"error":"{}"}}"#, e)
+        }
     }
 }
 
@@ -95,6 +110,7 @@ pub fn update_config(body: &str, config: &Arc<Mutex<RpcConfig>>) -> ConfigUpdate
         if is_safe_rpc_host(url) || allow_insecure() {
             cfg.url = url.into();
         } else {
+            warn!(url, "blocked non-local RPC URL");
             insecure_blocked = true;
         }
     }

@@ -2,6 +2,8 @@ use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+use tracing::{debug, warn};
+
 pub struct ZmqMessage {
     pub topic: String,
     pub body_hex: String,
@@ -40,7 +42,10 @@ pub fn start_zmq_subscriber(address: &str, state: Arc<Mutex<ZmqState>>) -> ZmqHa
         let ctx = zmq2::Context::new();
         let socket = match ctx.socket(zmq2::SUB) {
             Ok(s) => s,
-            Err(_) => return,
+            Err(e) => {
+                warn!(error = %e, "failed to create ZMQ subscriber socket");
+                return;
+            }
         };
 
         socket.set_rcvtimeo(500).ok();
@@ -48,10 +53,12 @@ pub fn start_zmq_subscriber(address: &str, state: Arc<Mutex<ZmqState>>) -> ZmqHa
             socket.set_subscribe(topic.as_bytes()).ok();
         }
 
-        if socket.connect(&addr).is_err() {
+        if let Err(e) = socket.connect(&addr) {
+            warn!(address = %addr, error = %e, "failed to connect ZMQ subscriber");
             return;
         }
 
+        debug!(address = %addr, "connected ZMQ subscriber");
         state.lock().unwrap().connected = true;
         state.lock().unwrap().address = addr;
 
@@ -59,7 +66,10 @@ pub fn start_zmq_subscriber(address: &str, state: Arc<Mutex<ZmqState>>) -> ZmqHa
             let parts = match socket.recv_multipart(0) {
                 Ok(p) => p,
                 Err(zmq2::Error::EAGAIN) => continue,
-                Err(_) => break,
+                Err(e) => {
+                    warn!(error = %e, "ZMQ receive error");
+                    break;
+                }
             };
 
             if parts.len() < 3 {
@@ -94,6 +104,7 @@ pub fn start_zmq_subscriber(address: &str, state: Arc<Mutex<ZmqState>>) -> ZmqHa
         }
 
         state.lock().unwrap().connected = false;
+        debug!("stopped ZMQ subscriber");
     });
 
     ZmqHandle { shutdown, thread }

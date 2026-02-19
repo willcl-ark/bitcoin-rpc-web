@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex};
 
+mod logging;
 mod music;
 mod protocol;
 mod rpc;
@@ -10,6 +11,8 @@ mod zmq;
 fn main() {
     use gtk::prelude::*;
     use wry::WebViewBuilderExtUnix;
+
+    logging::init();
 
     // Work around WebKitGTK DMA-BUF renderer freeze on Wayland
     unsafe { std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1") };
@@ -86,6 +89,8 @@ impl winit::application::ApplicationHandler for App {
 
 #[cfg(not(target_os = "linux"))]
 fn main() {
+    logging::init();
+
     let event_loop = winit::event_loop::EventLoop::new().unwrap();
     let mut app = App {
         window: None,

@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::sync::{Arc, Mutex};
 
+use tracing::{debug, warn};
 use wry::http::Response;
 use wry::http::header::{ACCESS_CONTROL_ALLOW_ORIGIN, CONTENT_TYPE};
 
@@ -21,6 +22,7 @@ pub fn build_webview(
         .with_asynchronous_custom_protocol("app".into(), move |_id, req, responder| {
             let path = req.uri().path().to_string();
             let query = req.uri().query().unwrap_or("").to_string();
+            debug!(method = %req.method(), path, query_bytes = query.len(), "protocol request");
 
             if path == "/rpc" {
                 let body = percent_decode(&query);
@@ -32,6 +34,7 @@ pub fn build_webview(
                         responder.respond(json_response(&result));
                     });
                 } else {
+                    warn!("rpc request rejected due to in-flight limit");
                     responder.respond(json_response(
                         r#"{"error":"rpc worker pool saturated; try again"}"#,
                     ));

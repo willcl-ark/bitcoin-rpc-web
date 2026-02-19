@@ -12,6 +12,8 @@ wry = "0.53"
 winit = "0.30"
 ureq = { version = "3", features = ["json"] }
 serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 xmrs = { version = "0.9", features = ["std", "import"], optional = true }
 xmrsplayer = { version = "0.9", optional = true }
 rodio = { version = "0.20", default-features = false, optional = true }

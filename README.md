@@ -63,7 +63,11 @@ zmqpubsequence=tcp://0.0.0.0:29000
 
 Use `127.0.0.1` instead of `0.0.0.0` if you only need local access. Then enter the ZMQ address (e.g. `tcp://127.0.0.1:29000`) in the config panel and press Connect. The ZMQ Events card will appear on the dashboard once messages arrive.
 
-Enable debug logging with `RUST_LOG=1`.
+Enable debug logging to stdout with:
+
+```
+RUST_LOG=bitcoin_rpc_web=debug cargo run --release
+```
 
 ### Remote RPC
 
