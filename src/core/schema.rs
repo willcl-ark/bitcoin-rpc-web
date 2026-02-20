@@ -18,7 +18,8 @@ impl SchemaIndex {
     }
 
     pub fn from_str(input: &str) -> Result<Self, String> {
-        let root: Value = serde_json::from_str(input).map_err(|e| format!("invalid schema: {e}"))?;
+        let root: Value =
+            serde_json::from_str(input).map_err(|e| format!("invalid schema: {e}"))?;
         let methods = root["methods"]
             .as_array()
             .ok_or_else(|| "schema is missing methods array".to_string())?

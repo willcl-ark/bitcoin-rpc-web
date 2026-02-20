@@ -150,9 +150,9 @@ impl RpcClient {
         );
 
         let response = self.post_json(&payload)?;
-        let array = response
-            .as_array()
-            .ok_or_else(|| RpcError::InvalidResponse("expected batch array response".to_string()))?;
+        let array = response.as_array().ok_or_else(|| {
+            RpcError::InvalidResponse("expected batch array response".to_string())
+        })?;
 
         array.iter().map(extract_result).collect()
     }
@@ -162,7 +162,10 @@ impl RpcClient {
         let response = self
             .agent
             .post(self.endpoint_url())
-            .header("Authorization", &basic_auth(&self.config.user, &self.config.password))
+            .header(
+                "Authorization",
+                &basic_auth(&self.config.user, &self.config.password),
+            )
             .content_type("application/json")
             .send(body.as_bytes())
             .map_err(|e| RpcError::Transport(e.to_string()))?;
@@ -444,12 +447,6 @@ mod tests {
             "error": { "code": -8, "message": "wallet not found" }
         }));
 
-        assert!(matches!(
-            result,
-            Err(RpcError::Rpc {
-                code: Some(-8),
-                ..
-            })
-        ));
+        assert!(matches!(result, Err(RpcError::Rpc { code: Some(-8), .. })));
     }
 }
