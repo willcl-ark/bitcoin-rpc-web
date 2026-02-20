@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use iced::widget::{button, column, container, row, scrollable, text};
+use iced::widget::{button, column, container, horizontal_space, row, scrollable, text};
 use iced::{Color, Element, Fill};
 use iced::{alignment, widget::text::Wrapping};
 use serde_json::Value;
@@ -313,12 +313,9 @@ fn summary_card<'a>(
     for (key, value) in lines {
         content = content.push(
             row![
-                text(format!("{key}:"))
-                    .color(components::MUTED)
-                    .width(iced::Length::FillPortion(2)),
-                text(value)
-                    .color(components::TEXT)
-                    .width(iced::Length::FillPortion(5))
+                text(format!("{key}:")).color(components::MUTED),
+                horizontal_space(),
+                text(value).color(components::TEXT)
             ]
             .spacing(3),
         );
