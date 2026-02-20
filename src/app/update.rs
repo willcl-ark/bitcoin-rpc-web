@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use crate::app::message::Message;
 use crate::app::state::{ConfigForm, DashboardPartialSet, State};
 use crate::core::config_store::ConfigStore;
-use crate::core::dashboard_service::{DashboardService, DashboardSnapshot};
+use crate::core::dashboard_service::{DashboardPartialUpdate, DashboardService, DashboardSnapshot};
 use crate::core::rpc_client::{
     MAX_ZMQ_BUFFER_LIMIT, MIN_ZMQ_BUFFER_LIMIT, RpcClient, RpcConfig, allow_insecure,
     is_safe_rpc_host,
@@ -253,25 +253,44 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
                     state.dashboard_error = Some(error);
                 }
             }
-
-            if let Some(partial) = state.dashboard_pending_partial
-                && can_run_debounced_refresh(state)
-            {
-                state.dashboard_pending_partial = None;
-                return Task::perform(
-                    async move { partial },
-                    Message::DashboardPartialRefreshRequested,
-                );
-            }
+            return schedule_pending_partial_if_ready(state);
         }
         Message::DashboardPeerSelected(peer_id) => {
             state.dashboard_selected_peer_id = Some(peer_id);
         }
-        Message::DashboardPartialRefreshRequested(_partial) => {
+        Message::DashboardPartialRefreshRequested(partial) => {
             if state.dashboard_in_flight {
                 return Task::none();
             }
-            return start_dashboard_refresh(state);
+            if state.dashboard_snapshot.is_none() {
+                return start_dashboard_refresh(state);
+            }
+            return start_partial_dashboard_refresh(state, partial);
+        }
+        Message::DashboardPartialLoaded(result) => {
+            state.dashboard_in_flight = false;
+            match result {
+                Ok(partial) => {
+                    if let Some(snapshot) = state.dashboard_snapshot.as_mut() {
+                        match partial {
+                            DashboardPartialUpdate::Mempool(mempool) => {
+                                snapshot.mempool = mempool;
+                            }
+                            DashboardPartialUpdate::ChainAndMempool { chain, mempool } => {
+                                snapshot.chain = chain;
+                                snapshot.mempool = mempool;
+                            }
+                        }
+                        state.dashboard_error = None;
+                    } else {
+                        return start_dashboard_refresh(state);
+                    }
+                }
+                Err(error) => {
+                    state.dashboard_error = Some(error);
+                }
+            }
+            return schedule_pending_partial_if_ready(state);
         }
         Message::ZmqPollTick => {
             poll_zmq_feed(state);
@@ -291,11 +310,37 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
     Task::none()
 }
 
+fn schedule_pending_partial_if_ready(state: &mut State) -> Task<Message> {
+    if let Some(partial) = state.dashboard_pending_partial
+        && can_run_debounced_refresh(state)
+    {
+        state.dashboard_pending_partial = None;
+        return Task::perform(
+            async move { partial },
+            Message::DashboardPartialRefreshRequested,
+        );
+    }
+    Task::none()
+}
+
 fn start_dashboard_refresh(state: &mut State) -> Task<Message> {
     state.dashboard_in_flight = true;
     state.dashboard_last_refresh_at = Some(Instant::now());
     let client = state.rpc_client.clone();
     Task::perform(load_dashboard(client), Message::DashboardLoaded)
+}
+
+fn start_partial_dashboard_refresh(
+    state: &mut State,
+    partial: DashboardPartialSet,
+) -> Task<Message> {
+    state.dashboard_in_flight = true;
+    state.dashboard_last_refresh_at = Some(Instant::now());
+    let client = state.rpc_client.clone();
+    Task::perform(
+        load_dashboard_partial(client, partial),
+        Message::DashboardPartialLoaded,
+    )
 }
 
 fn can_run_debounced_refresh(state: &State) -> bool {
@@ -417,6 +462,18 @@ async fn run_batch_rpc(client: RpcClient, batch_text: String) -> Result<String, 
 async fn load_dashboard(client: RpcClient) -> Result<DashboardSnapshot, String> {
     let service = DashboardService::new(client);
     service.fetch_snapshot().map_err(|e| e.to_string())
+}
+
+async fn load_dashboard_partial(
+    client: RpcClient,
+    partial: DashboardPartialSet,
+) -> Result<DashboardPartialUpdate, String> {
+    let service = DashboardService::new(client);
+    match partial {
+        DashboardPartialSet::MempoolOnly => service.fetch_mempool_update(),
+        DashboardPartialSet::ChainAndMempool => service.fetch_chain_and_mempool_update(),
+    }
+    .map_err(|e| e.to_string())
 }
 
 async fn load_config(store: ConfigStore) -> Result<RpcConfig, String> {

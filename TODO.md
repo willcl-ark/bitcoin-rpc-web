@@ -7,9 +7,9 @@
 - Completed: Phase 2 (Config UI) with connect/save/reload flow wired and runtime ZMQ updates applied.
 - Completed: Phase 3 (RPC UI) with method search, single call, batch mode, and response rendering.
 - Completed: Phase 4 (Dashboard UI) with periodic refresh + peer list/detail rendering.
-- In progress: Phase 5 (ZMQ-driven refreshes) with polling, topic mapping, debounce, and feed indicator wiring.
+- Completed: Phase 5 (ZMQ-driven refreshes) with polling, topic mapping, debounce, feed indicator wiring, and partial dashboard update paths.
 - Current runtime blocker on NixOS devshell: `NoWaylandLib` when creating the `iced`/`winit` event loop.
-- Next focus: Phase 5 polish/completion and Flake migration updates for Wayland/X11 graphics libs.
+- Next focus: Phase 6 docs/polish and Flake migration updates for Wayland/X11 graphics libs.
 
 ## Scope
 

@@ -1,4 +1,3 @@
-
 use serde_json::Value;
 
 use crate::core::rpc_client::{RpcCall, RpcClient, RpcError};
@@ -52,6 +51,15 @@ pub struct PeerSummary {
     pub ping_time: Option<f64>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum DashboardPartialUpdate {
+    Mempool(MempoolSummary),
+    ChainAndMempool {
+        chain: ChainSummary,
+        mempool: MempoolSummary,
+    },
+}
+
 pub struct DashboardService {
     rpc_client: RpcClient,
 }
@@ -63,15 +71,68 @@ impl DashboardService {
 
     pub fn fetch_snapshot(&self) -> Result<DashboardSnapshot, RpcError> {
         let calls = vec![
-            RpcCall::new(serde_json::json!(1), "getblockchaininfo", serde_json::json!([])),
-            RpcCall::new(serde_json::json!(2), "getnetworkinfo", serde_json::json!([])),
-            RpcCall::new(serde_json::json!(3), "getmempoolinfo", serde_json::json!([])),
+            RpcCall::new(
+                serde_json::json!(1),
+                "getblockchaininfo",
+                serde_json::json!([]),
+            ),
+            RpcCall::new(
+                serde_json::json!(2),
+                "getnetworkinfo",
+                serde_json::json!([]),
+            ),
+            RpcCall::new(
+                serde_json::json!(3),
+                "getmempoolinfo",
+                serde_json::json!([]),
+            ),
             RpcCall::new(serde_json::json!(4), "getpeerinfo", serde_json::json!([])),
             RpcCall::new(serde_json::json!(5), "uptime", serde_json::json!([])),
             RpcCall::new(serde_json::json!(6), "getnettotals", serde_json::json!([])),
         ];
         let responses = self.rpc_client.batch(&calls)?;
         self.build_snapshot(&responses)
+    }
+
+    pub fn fetch_mempool_update(&self) -> Result<DashboardPartialUpdate, RpcError> {
+        let calls = vec![RpcCall::new(
+            serde_json::json!(1),
+            "getmempoolinfo",
+            serde_json::json!([]),
+        )];
+        let responses = self.rpc_client.batch(&calls)?;
+        let mempool = responses
+            .first()
+            .ok_or_else(|| RpcError::InvalidResponse("missing mempool response".to_string()))
+            .and_then(parse_mempool)?;
+        Ok(DashboardPartialUpdate::Mempool(mempool))
+    }
+
+    pub fn fetch_chain_and_mempool_update(&self) -> Result<DashboardPartialUpdate, RpcError> {
+        let calls = vec![
+            RpcCall::new(
+                serde_json::json!(1),
+                "getblockchaininfo",
+                serde_json::json!([]),
+            ),
+            RpcCall::new(
+                serde_json::json!(2),
+                "getmempoolinfo",
+                serde_json::json!([]),
+            ),
+        ];
+        let responses = self.rpc_client.batch(&calls)?;
+        if responses.len() != 2 {
+            return Err(RpcError::InvalidResponse(format!(
+                "expected 2 partial responses, got {}",
+                responses.len()
+            )));
+        }
+
+        Ok(DashboardPartialUpdate::ChainAndMempool {
+            chain: parse_chain(&responses[0])?,
+            mempool: parse_mempool(&responses[1])?,
+        })
     }
 
     pub fn build_snapshot(&self, responses: &[Value]) -> Result<DashboardSnapshot, RpcError> {
@@ -82,38 +143,21 @@ impl DashboardService {
             )));
         }
 
-        let blockchain = responses[0].as_object().ok_or_else(|| {
-            RpcError::InvalidResponse("getblockchaininfo result must be object".to_string())
-        })?;
         let network = responses[1].as_object().ok_or_else(|| {
             RpcError::InvalidResponse("getnetworkinfo result must be object".to_string())
-        })?;
-        let mempool = responses[2].as_object().ok_or_else(|| {
-            RpcError::InvalidResponse("getmempoolinfo result must be object".to_string())
         })?;
         let peers = responses[3].as_array().ok_or_else(|| {
             RpcError::InvalidResponse("getpeerinfo result must be array".to_string())
         })?;
-        let uptime_secs = responses[4].as_u64().ok_or_else(|| {
-            RpcError::InvalidResponse("uptime result must be u64".to_string())
-        })?;
+        let uptime_secs = responses[4]
+            .as_u64()
+            .ok_or_else(|| RpcError::InvalidResponse("uptime result must be u64".to_string()))?;
         let traffic = responses[5].as_object().ok_or_else(|| {
             RpcError::InvalidResponse("getnettotals result must be object".to_string())
         })?;
 
-        let chain = ChainSummary {
-            chain: string(blockchain, "chain")?,
-            blocks: u64_field(blockchain, "blocks")?,
-            headers: u64_field(blockchain, "headers")?,
-            verification_progress: f64_field(blockchain, "verificationprogress")?,
-        };
-
-        let mempool = MempoolSummary {
-            transactions: u64_field(mempool, "size")?,
-            bytes: u64_field(mempool, "bytes")?,
-            usage: u64_field(mempool, "usage")?,
-            maxmempool: u64_field(mempool, "maxmempool")?,
-        };
+        let chain = parse_chain(&responses[0])?;
+        let mempool = parse_mempool(&responses[2])?;
 
         let network = NetworkSummary {
             version: i64_field(network, "version")?,
@@ -151,6 +195,32 @@ impl DashboardService {
             uptime_secs,
         })
     }
+}
+
+fn parse_chain(value: &Value) -> Result<ChainSummary, RpcError> {
+    let blockchain = value.as_object().ok_or_else(|| {
+        RpcError::InvalidResponse("getblockchaininfo result must be object".to_string())
+    })?;
+
+    Ok(ChainSummary {
+        chain: string(blockchain, "chain")?,
+        blocks: u64_field(blockchain, "blocks")?,
+        headers: u64_field(blockchain, "headers")?,
+        verification_progress: f64_field(blockchain, "verificationprogress")?,
+    })
+}
+
+fn parse_mempool(value: &Value) -> Result<MempoolSummary, RpcError> {
+    let mempool = value.as_object().ok_or_else(|| {
+        RpcError::InvalidResponse("getmempoolinfo result must be object".to_string())
+    })?;
+
+    Ok(MempoolSummary {
+        transactions: u64_field(mempool, "size")?,
+        bytes: u64_field(mempool, "bytes")?,
+        usage: u64_field(mempool, "usage")?,
+        maxmempool: u64_field(mempool, "maxmempool")?,
+    })
 }
 
 fn string(object: &serde_json::Map<String, Value>, key: &str) -> Result<String, RpcError> {
@@ -191,7 +261,7 @@ fn bool_field(object: &serde_json::Map<String, Value>, key: &str) -> Result<bool
 
 #[cfg(test)]
 mod tests {
-    use crate::core::dashboard_service::DashboardService;
+    use super::{DashboardPartialUpdate, DashboardService, parse_chain, parse_mempool};
     use crate::core::rpc_client::{RpcClient, RpcConfig};
 
     #[test]
@@ -244,5 +314,42 @@ mod tests {
         assert_eq!(snapshot.uptime_secs, 123);
         assert_eq!(snapshot.peers.len(), 1);
         assert_eq!(snapshot.peers[0].connection_type, "manual");
+    }
+
+    #[test]
+    fn chain_parser_maps_representative_payload() {
+        let chain = parse_chain(&serde_json::json!({
+            "chain": "regtest",
+            "blocks": 5,
+            "headers": 7,
+            "verificationprogress": 0.91
+        }))
+        .expect("chain should parse");
+        assert_eq!(chain.chain, "regtest");
+        assert_eq!(chain.blocks, 5);
+        assert_eq!(chain.headers, 7);
+        assert_eq!(chain.verification_progress, 0.91);
+    }
+
+    #[test]
+    fn mempool_partial_update_variant_holds_values() {
+        let mempool = parse_mempool(&serde_json::json!({
+            "size": 10,
+            "bytes": 100,
+            "usage": 200,
+            "maxmempool": 300
+        }))
+        .expect("mempool should parse");
+
+        let update = DashboardPartialUpdate::Mempool(mempool.clone());
+        match update {
+            DashboardPartialUpdate::Mempool(inner) => {
+                assert_eq!(inner.transactions, 10);
+                assert_eq!(inner.bytes, 100);
+                assert_eq!(inner.usage, 200);
+                assert_eq!(inner.maxmempool, 300);
+            }
+            _ => panic!("expected mempool update"),
+        }
     }
 }
