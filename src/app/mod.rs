@@ -6,5 +6,11 @@ pub mod view;
 
 pub fn run() -> iced::Result {
     iced::application("Bitcoin Core RPC", update::update, view::view)
-        .run_with(|| (state::State::default(), iced::Task::none()))
+        .subscription(subscription::subscriptions)
+        .run_with(|| {
+            (
+                state::State::default(),
+                iced::Task::perform(async {}, |_| message::Message::DashboardTick),
+            )
+        })
 }

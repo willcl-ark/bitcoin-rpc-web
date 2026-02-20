@@ -4,6 +4,7 @@ use serde_json::Value;
 use crate::app::message::Message;
 use crate::app::state::{ConfigForm, State};
 use crate::core::config_store::ConfigStore;
+use crate::core::dashboard_service::{DashboardService, DashboardSnapshot};
 use crate::core::rpc_client::{
     MAX_ZMQ_BUFFER_LIMIT, MIN_ZMQ_BUFFER_LIMIT, RpcClient, RpcConfig, allow_insecure,
     is_safe_rpc_host,
@@ -78,6 +79,7 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
                 Ok(config) => {
                     apply_runtime_config(state, config);
                     state.config_status = Some("Connected successfully.".to_string());
+                    return Task::perform(async {}, |_| Message::DashboardTick);
                 }
                 Err(error) => {
                     state.config_status = None;
@@ -103,6 +105,7 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
             Ok(config) => {
                 apply_runtime_config(state, config);
                 state.config_status = Some("Settings reloaded.".to_string());
+                return Task::perform(async {}, |_| Message::DashboardTick);
             }
             Err(error) => {
                 state.config_status = None;
@@ -152,6 +155,7 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
                 Ok(config) => {
                     apply_runtime_config(state, config);
                     state.config_status = Some("Settings saved.".to_string());
+                    return Task::perform(async {}, |_| Message::DashboardTick);
                 }
                 Err(error) => {
                     state.config_status = None;
@@ -223,6 +227,35 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
                 }
             }
         }
+        Message::DashboardTick => {
+            if state.dashboard_in_flight {
+                return Task::none();
+            }
+            state.dashboard_in_flight = true;
+            let client = state.rpc_client.clone();
+            return Task::perform(load_dashboard(client), Message::DashboardLoaded);
+        }
+        Message::DashboardLoaded(result) => {
+            state.dashboard_in_flight = false;
+            match result {
+                Ok(snapshot) => {
+                    let selected_is_valid = state
+                        .dashboard_selected_peer_id
+                        .is_some_and(|id| snapshot.peers.iter().any(|peer| peer.id == id));
+                    if !selected_is_valid {
+                        state.dashboard_selected_peer_id = snapshot.peers.first().map(|p| p.id);
+                    }
+                    state.dashboard_snapshot = Some(snapshot);
+                    state.dashboard_error = None;
+                }
+                Err(error) => {
+                    state.dashboard_error = Some(error);
+                }
+            }
+        }
+        Message::DashboardPeerSelected(peer_id) => {
+            state.dashboard_selected_peer_id = Some(peer_id);
+        }
     }
 
     Task::none()
@@ -291,6 +324,11 @@ async fn run_batch_rpc(client: RpcClient, batch_text: String) -> Result<String, 
     }
     let response = client.post_json(&payload).map_err(|e| e.to_string())?;
     serde_json::to_string_pretty(&response).map_err(|e| format!("failed to format response: {e}"))
+}
+
+async fn load_dashboard(client: RpcClient) -> Result<DashboardSnapshot, String> {
+    let service = DashboardService::new(client);
+    service.fetch_snapshot().map_err(|e| e.to_string())
 }
 
 async fn load_config(store: ConfigStore) -> Result<RpcConfig, String> {

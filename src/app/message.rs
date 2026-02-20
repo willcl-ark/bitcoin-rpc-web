@@ -1,4 +1,5 @@
 use crate::app::state::Tab;
+use crate::core::dashboard_service::DashboardSnapshot;
 use crate::core::rpc_client::RpcConfig;
 
 #[derive(Debug, Clone)]
@@ -24,4 +25,7 @@ pub enum Message {
     RpcBatchChanged(String),
     RpcExecutePressed,
     RpcExecuteFinished(Result<String, String>),
+    DashboardTick,
+    DashboardLoaded(Result<DashboardSnapshot, String>),
+    DashboardPeerSelected(i64),
 }

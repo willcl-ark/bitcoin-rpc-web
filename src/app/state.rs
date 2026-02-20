@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::core::config_store::ConfigStore;
+use crate::core::dashboard_service::DashboardSnapshot;
 use crate::core::rpc_client::{MAX_ZMQ_BUFFER_LIMIT, MIN_ZMQ_BUFFER_LIMIT, RpcClient, RpcConfig};
 use crate::core::schema::SchemaIndex;
 use crate::zmq::{ZmqHandle, ZmqSharedState, start_zmq_subscriber, stop_zmq_subscriber};
@@ -62,6 +63,10 @@ pub struct State {
     pub rpc_execute_in_flight: bool,
     pub rpc_response: Option<String>,
     pub rpc_error: Option<String>,
+    pub dashboard_snapshot: Option<DashboardSnapshot>,
+    pub dashboard_in_flight: bool,
+    pub dashboard_error: Option<String>,
+    pub dashboard_selected_peer_id: Option<i64>,
 }
 
 impl State {
@@ -123,6 +128,10 @@ impl State {
             rpc_execute_in_flight: false,
             rpc_response: None,
             rpc_error: None,
+            dashboard_snapshot: None,
+            dashboard_in_flight: false,
+            dashboard_error: None,
+            dashboard_selected_peer_id: None,
         };
 
         let startup_zmq = state.runtime_config.zmq_address.trim().to_string();
