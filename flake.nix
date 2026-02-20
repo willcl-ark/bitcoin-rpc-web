@@ -96,6 +96,8 @@
 
               # Window system
               wayland
+              libxkbcommon
+              xkeyboard_config
               # xorg.libX11
               # xorg.libXcursor
               # xorg.libXi
@@ -109,6 +111,7 @@
             RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";
           }
           // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
+            XKB_CONFIG_ROOT = "${pkgs.xkeyboard_config}/share/X11/xkb";
             RUSTFLAGS = "-C link-arg=-Wl,-rpath,${
               pkgs.lib.makeLibraryPath [
                 pkgs.alsa-lib
@@ -118,6 +121,7 @@
 
                 # Window system
                 pkgs.wayland
+                pkgs.libxkbcommon
                 # xorg.libX11
                 # xorg.libXcursor
                 # xorg.libXi
@@ -131,6 +135,7 @@
 
               # Window system
               pkgs.wayland
+              pkgs.libxkbcommon
               # xorg.libX11
               # xorg.libXcursor
               # xorg.libXi
