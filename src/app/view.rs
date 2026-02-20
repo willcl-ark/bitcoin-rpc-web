@@ -8,9 +8,7 @@ use crate::ui::components;
 pub fn view(state: &State) -> Element<'_, Message> {
     let fs = state.config.runtime.font_size;
     let nav = column![
-        text("BITCOIN RPC // MCU")
-            .size(fs + 7)
-            .color(components::ACCENT),
+        text("BITCOIN CORE").size(fs + 7).color(components::ACCENT),
         text("NODE CONTROL")
             .size(fs.saturating_sub(3))
             .color(components::MUTED),
