@@ -199,11 +199,10 @@ pub fn app_surface(colors: &ColorTheme) -> impl Fn(&Theme) -> container::Style +
 }
 
 pub fn panel_style(colors: &ColorTheme) -> impl Fn(&Theme) -> container::Style + 'static {
-    let bg1 = colors.bg1;
     let border_focus = colors.border_focus;
     let fg = colors.fg;
     move |_theme| container::Style {
-        background: Some(Background::Color(bg1)),
+        background: None,
         border: Border {
             radius: 0.0.into(),
             width: 1.0,
@@ -216,11 +215,10 @@ pub fn panel_style(colors: &ColorTheme) -> impl Fn(&Theme) -> container::Style +
 }
 
 pub fn card_style(colors: &ColorTheme) -> impl Fn(&Theme) -> container::Style + 'static {
-    let bg2 = colors.bg2;
     let border = colors.border;
     let fg = colors.fg;
     move |_theme| container::Style {
-        background: Some(Background::Color(bg2)),
+        background: None,
         border: Border {
             radius: 0.0.into(),
             width: 1.0,
@@ -364,28 +362,21 @@ pub fn table_header_button_style(
     active: bool,
 ) -> impl Fn(&Theme, button::Status) -> button::Style + 'static {
     let blue = colors.blue;
-    let border = colors.border;
     let accent = colors.accent;
     let fg_dim = colors.fg_dim;
     move |_theme, status| {
-        let base_bg = if active {
-            with_alpha(blue, 0.10)
-        } else {
-            Color::TRANSPARENT
-        };
         let background = match status {
-            button::Status::Hovered => with_alpha(blue, 0.14),
-            button::Status::Pressed => with_alpha(blue, 0.20),
-            button::Status::Disabled => with_alpha(base_bg, 0.6),
-            _ => base_bg,
+            button::Status::Hovered => with_alpha(blue, 0.10),
+            button::Status::Pressed => with_alpha(blue, 0.16),
+            _ => Color::TRANSPARENT,
         };
 
         button::Style {
             background: Some(Background::Color(background)),
             border: Border {
                 radius: 0.0.into(),
-                width: if active { 1.0 } else { 0.0 },
-                color: if active { border } else { Color::TRANSPARENT },
+                width: 0.0,
+                color: Color::TRANSPARENT,
             },
             text_color: if active { accent } else { fg_dim },
             shadow: Shadow::default(),
