@@ -23,59 +23,69 @@ pub fn view(state: &State) -> Element<'_, Message> {
     };
 
     let top_strip: Element<'_, Message> = if let Some(snapshot) = &state.dashboard.snapshot {
+        let chain_fields = vec![
+            ("network", snapshot.chain.chain.clone()),
+            ("blocks", snapshot.chain.blocks.to_string()),
+            ("headers", snapshot.chain.headers.to_string()),
+            (
+                "verification",
+                format!("{:.4}%", snapshot.chain.verification_progress * 100.0),
+            ),
+            ("difficulty", format_difficulty(snapshot.chain.difficulty)),
+        ];
+        let mempool_fields = vec![
+            ("transactions", snapshot.mempool.transactions.to_string()),
+            ("bytes", snapshot.mempool.bytes.to_string()),
+            ("usage", snapshot.mempool.usage.to_string()),
+            ("max", snapshot.mempool.maxmempool.to_string()),
+        ];
+        let network_fields = {
+            let n = &snapshot.network;
+            let mut fields = vec![
+                ("version", n.version.to_string()),
+                ("subversion", n.subversion.clone()),
+                (
+                    "connections",
+                    format!(
+                        "in {}, out {}, total {}",
+                        n.connections_in, n.connections_out, n.connections
+                    ),
+                ),
+                ("time offset", format!("{}s", n.timeoffset)),
+                ("uptime", format!("{}s", snapshot.uptime_secs)),
+                ("relay fee", format!("{:.8} BTC/kvB", n.relayfee)),
+            ];
+            if !n.proxies.is_empty() {
+                fields.push(("proxies", n.proxies.clone()));
+            }
+            fields
+        };
+        let traffic_fields = vec![
+            (
+                "recv",
+                format!("{} bytes", snapshot.traffic.total_bytes_recv),
+            ),
+            (
+                "sent",
+                format!("{} bytes", snapshot.traffic.total_bytes_sent),
+            ),
+        ];
+
+        let max_lines = chain_fields
+            .len()
+            .max(mempool_fields.len())
+            .max(network_fields.len())
+            .max(traffic_fields.len());
+
         row![
-            summary_card(
-                "Chain",
-                vec![
-                    ("network", snapshot.chain.chain.clone()),
-                    ("blocks", snapshot.chain.blocks.to_string()),
-                    ("headers", snapshot.chain.headers.to_string()),
-                    (
-                        "verification",
-                        format!("{:.4}", snapshot.chain.verification_progress)
-                    ),
-                ],
-                fs,
-            )
-            .width(iced::Length::FillPortion(1)),
-            summary_card(
-                "Mempool",
-                vec![
-                    ("transactions", snapshot.mempool.transactions.to_string()),
-                    ("bytes", snapshot.mempool.bytes.to_string()),
-                    ("usage", snapshot.mempool.usage.to_string()),
-                    ("max", snapshot.mempool.maxmempool.to_string()),
-                ],
-                fs,
-            )
-            .width(iced::Length::FillPortion(1)),
-            summary_card(
-                "Network",
-                vec![
-                    ("version", snapshot.network.version.to_string()),
-                    ("subversion", snapshot.network.subversion.clone()),
-                    ("protocol", snapshot.network.protocol_version.to_string()),
-                    ("connections", snapshot.network.connections.to_string()),
-                    ("uptime", format!("{}s", snapshot.uptime_secs)),
-                ],
-                fs,
-            )
-            .width(iced::Length::FillPortion(1)),
-            summary_card(
-                "Traffic",
-                vec![
-                    (
-                        "recv",
-                        format!("{} bytes", snapshot.traffic.total_bytes_recv)
-                    ),
-                    (
-                        "sent",
-                        format!("{} bytes", snapshot.traffic.total_bytes_sent)
-                    ),
-                ],
-                fs,
-            )
-            .width(iced::Length::FillPortion(1)),
+            summary_card("Chain", chain_fields, fs, max_lines)
+                .width(iced::Length::FillPortion(1)),
+            summary_card("Mempool", mempool_fields, fs, max_lines)
+                .width(iced::Length::FillPortion(1)),
+            summary_card("Network", network_fields, fs, max_lines)
+                .width(iced::Length::FillPortion(1)),
+            summary_card("Traffic", traffic_fields, fs, max_lines)
+                .width(iced::Length::FillPortion(1)),
         ]
         .spacing(8)
         .into()
@@ -123,6 +133,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
             ),
         ],
         fs,
+        0,
     );
 
     let mut live_rows = column![
@@ -177,17 +188,20 @@ pub fn view(state: &State) -> Element<'_, Message> {
         }
     }
 
+    let zmq_height = 200;
+
     let zmq_panel = container(
         row![
             container(zmq_summary)
                 .style(components::card_style())
                 .padding(8)
+                .height(zmq_height)
                 .width(iced::Length::FillPortion(2)),
             container(
                 column![
                     text("LIVE EVENTS").size(fs).color(components::ACCENT),
                     scrollable(live_rows)
-                        .height(160)
+                        .height(Fill)
                         .direction(scrollable::Direction::Vertical(
                             scrollable::Scrollbar::new()
                                 .width(6)
@@ -199,6 +213,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
             )
             .style(components::card_style())
             .padding(8)
+            .height(zmq_height)
             .width(iced::Length::FillPortion(5)),
         ]
         .spacing(8),
@@ -427,7 +442,9 @@ fn summary_card<'a>(
     title: &'a str,
     lines: Vec<(&'a str, String)>,
     fs: u16,
+    max_lines: usize,
 ) -> iced::widget::Container<'a, Message> {
+    let count = lines.len();
     let mut content = column![
         text(title.to_uppercase())
             .size(fs)
@@ -443,6 +460,9 @@ fn summary_card<'a>(
             ]
             .spacing(3),
         );
+    }
+    for _ in count..max_lines {
+        content = content.push(text(" ").size(fs));
     }
     container(content)
         .padding(8)
@@ -506,6 +526,20 @@ fn sorted_peers<'a>(state: &State, peers: &'a [PeerSummary]) -> Vec<&'a PeerSumm
         }
     });
     sorted
+}
+
+fn format_difficulty(d: f64) -> String {
+    if d >= 1e15 {
+        format!("{:.2}P", d / 1e15)
+    } else if d >= 1e12 {
+        format!("{:.2}T", d / 1e12)
+    } else if d >= 1e9 {
+        format!("{:.2}G", d / 1e9)
+    } else if d >= 1e6 {
+        format!("{:.2}M", d / 1e6)
+    } else {
+        format!("{:.1}", d)
+    }
 }
 
 fn format_event_time(timestamp: u64) -> String {

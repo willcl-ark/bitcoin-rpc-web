@@ -40,17 +40,20 @@ pub fn view(state: &State) -> Element<'_, Message> {
     .height(Fill)
     .width(Fill);
 
-    container(
-        column![main_area, crate::ui::music_bar::view(state)].width(Fill),
-    )
-    .style(components::app_surface())
-    .padding(10)
-    .height(Fill)
-    .width(Fill)
-    .into()
+    container(column![main_area, crate::ui::music_bar::view(state)].width(Fill))
+        .style(components::app_surface())
+        .padding(10)
+        .height(Fill)
+        .width(Fill)
+        .into()
 }
 
-fn nav_button(label: &'static str, tab: Tab, active_tab: Tab, fs: u16) -> Element<'static, Message> {
+fn nav_button(
+    label: &'static str,
+    tab: Tab,
+    active_tab: Tab,
+    fs: u16,
+) -> Element<'static, Message> {
     button(text(format!("[{}]", label)).size(fs))
         .width(Fill)
         .style(components::nav_button_style(tab == active_tab))

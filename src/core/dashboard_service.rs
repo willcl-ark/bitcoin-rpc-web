@@ -21,6 +21,7 @@ pub struct ChainSummary {
     pub blocks: u64,
     pub headers: u64,
     pub verification_progress: f64,
+    pub difficulty: f64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -37,6 +38,11 @@ pub struct NetworkSummary {
     pub subversion: String,
     pub protocol_version: i64,
     pub connections: i64,
+    pub connections_in: i64,
+    pub connections_out: i64,
+    pub timeoffset: i64,
+    pub relayfee: f64,
+    pub proxies: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -179,11 +185,18 @@ impl DashboardService {
         let chain = parse_chain(&responses[0])?;
         let mempool = parse_mempool(&responses[2])?;
 
+        let proxies = extract_proxies(network);
+
         let network = NetworkSummary {
             version: field(network, "version", Value::as_i64, "i64")?,
             subversion: string(network, "subversion")?,
             protocol_version: field(network, "protocolversion", Value::as_i64, "i64")?,
             connections: field(network, "connections", Value::as_i64, "i64")?,
+            connections_in: field(network, "connections_in", Value::as_i64, "i64").unwrap_or(0),
+            connections_out: field(network, "connections_out", Value::as_i64, "i64").unwrap_or(0),
+            timeoffset: field(network, "timeoffset", Value::as_i64, "i64").unwrap_or(0),
+            relayfee: field(network, "relayfee", Value::as_f64, "f64").unwrap_or(0.0),
+            proxies,
         };
 
         let traffic = TrafficSummary {
@@ -272,6 +285,31 @@ fn format_services(servicesnames: Option<&Value>) -> String {
         .collect()
 }
 
+fn extract_proxies(network: &serde_json::Map<String, Value>) -> String {
+    let Some(networks) = network.get("networks").and_then(Value::as_array) else {
+        return String::new();
+    };
+
+    let mut seen = Vec::new();
+    for entry in networks {
+        let proxy = entry["proxy"].as_str().unwrap_or("");
+        let name = entry["name"].as_str().unwrap_or("");
+        if proxy.is_empty() {
+            continue;
+        }
+        if let Some((_, names)) = seen.iter_mut().find(|(p, _): &&mut (&str, Vec<&str>)| *p == proxy) {
+            names.push(name);
+        } else {
+            seen.push((proxy, vec![name]));
+        }
+    }
+
+    seen.iter()
+        .map(|(proxy, names)| format!("{proxy} ({})", names.join(", ")))
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
 fn parse_chain(value: &Value) -> Result<ChainSummary, RpcError> {
     let blockchain = value.as_object().ok_or_else(|| {
         RpcError::InvalidResponse("getblockchaininfo result must be object".to_string())
@@ -282,6 +320,7 @@ fn parse_chain(value: &Value) -> Result<ChainSummary, RpcError> {
         blocks: field(blockchain, "blocks", Value::as_u64, "u64")?,
         headers: field(blockchain, "headers", Value::as_u64, "u64")?,
         verification_progress: field(blockchain, "verificationprogress", Value::as_f64, "f64")?,
+        difficulty: field(blockchain, "difficulty", Value::as_f64, "f64")?,
     })
 }
 
@@ -326,13 +365,22 @@ mod tests {
                 "chain": "regtest",
                 "blocks": 101,
                 "headers": 101,
-                "verificationprogress": 1.0
+                "verificationprogress": 1.0,
+                "difficulty": 4.656542373906925e-10
             }),
             serde_json::json!({
                 "version": 299900,
                 "subversion": "/Satoshi:30.99.0/",
                 "protocolversion": 70016,
-                "connections": 8
+                "connections": 8,
+                "connections_in": 3,
+                "connections_out": 5,
+                "timeoffset": 0,
+                "relayfee": 0.00001,
+                "networks": [
+                    {"name": "onion", "proxy": "127.0.0.1:9050"},
+                    {"name": "i2p", "proxy": "127.0.0.1:7656"}
+                ]
             }),
             serde_json::json!({
                 "size": 2,
@@ -379,7 +427,16 @@ mod tests {
 
         assert_eq!(snapshot.chain.chain, "regtest");
         assert_eq!(snapshot.chain.blocks, 101);
+        assert!(snapshot.chain.difficulty > 0.0);
         assert_eq!(snapshot.network.connections, 8);
+        assert_eq!(snapshot.network.connections_in, 3);
+        assert_eq!(snapshot.network.connections_out, 5);
+        assert_eq!(snapshot.network.timeoffset, 0);
+        assert_eq!(snapshot.network.relayfee, 0.00001);
+        assert_eq!(
+            snapshot.network.proxies,
+            "127.0.0.1:9050 (onion); 127.0.0.1:7656 (i2p)"
+        );
         assert_eq!(snapshot.mempool.transactions, 2);
         assert_eq!(snapshot.traffic.total_bytes_sent, 2000);
         assert_eq!(snapshot.uptime_secs, 123);
@@ -400,7 +457,8 @@ mod tests {
             "chain": "regtest",
             "blocks": 5,
             "headers": 7,
-            "verificationprogress": 0.91
+            "verificationprogress": 0.91,
+            "difficulty": 1.0
         }))
         .expect("chain should parse");
         assert_eq!(chain.chain, "regtest");
