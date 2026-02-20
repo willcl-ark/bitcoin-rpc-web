@@ -2,91 +2,158 @@ use iced::theme::Palette;
 use iced::widget::{button, checkbox, container, text_input};
 use iced::{Background, Border, Color, Shadow, Theme};
 
-pub const BG: Color = Color::from_rgb(0.01, 0.03, 0.06);
-pub const PANEL: Color = Color::from_rgb(0.02, 0.08, 0.12);
-pub const PANEL_ALT: Color = Color::from_rgb(0.03, 0.11, 0.17);
-pub const PANEL_ALT_2: Color = Color::from_rgb(0.04, 0.14, 0.22);
-pub const ACCENT: Color = Color::from_rgb(0.18, 0.93, 0.98);
-pub const ACCENT_ALT: Color = Color::from_rgb(0.04, 0.65, 0.84);
-pub const AMBER: Color = Color::from_rgb(0.98, 0.69, 0.16);
-pub const ERROR_RED: Color = Color::from_rgb(0.95, 0.32, 0.29);
-pub const TEXT: Color = Color::from_rgb(0.81, 0.92, 0.98);
-pub const MUTED: Color = Color::from_rgb(0.44, 0.63, 0.75);
-pub const BORDER: Color = Color::from_rgb(0.08, 0.27, 0.36);
-pub const GREEN: Color = Color::from_rgb(0.20, 0.84, 0.46);
-pub const BORDER_HOT: Color = Color::from_rgb(0.14, 0.64, 0.74);
+pub struct ColorTheme {
+    pub bg: Color,
+    pub bg1: Color,
+    pub bg2: Color,
+    pub bg3: Color,
+    pub fg: Color,
+    pub fg_dim: Color,
+    pub border: Color,
+    pub border_focus: Color,
+    pub accent: Color,
+    pub red: Color,
+    pub orange: Color,
+    pub yellow: Color,
+    pub green: Color,
+    pub blue: Color,
+    pub cyan: Color,
+    pub purple: Color,
+}
 
-pub fn mission_theme() -> Theme {
-    Theme::custom(
-        "Mission Control".to_string(),
-        Palette {
-            background: BG,
-            text: TEXT,
-            primary: ACCENT,
-            success: ACCENT_ALT,
-            danger: ERROR_RED,
-        },
+impl Default for ColorTheme {
+    fn default() -> Self {
+        Self {
+            bg: Color::from_rgb(0.01, 0.03, 0.06),
+            bg1: Color::from_rgb(0.02, 0.08, 0.12),
+            bg2: Color::from_rgb(0.03, 0.11, 0.17),
+            bg3: Color::from_rgb(0.04, 0.14, 0.22),
+            fg: Color::from_rgb(0.81, 0.92, 0.98),
+            fg_dim: Color::from_rgb(0.44, 0.63, 0.75),
+            border: Color::from_rgb(0.08, 0.27, 0.36),
+            border_focus: Color::from_rgb(0.14, 0.64, 0.74),
+            accent: Color::from_rgb(0.18, 0.93, 0.98),
+            red: Color::from_rgb(0.95, 0.32, 0.29),
+            orange: Color::from_rgb(0.98, 0.69, 0.16),
+            yellow: Color::from_rgb(0.96, 0.79, 0.27),
+            green: Color::from_rgb(0.20, 0.84, 0.46),
+            blue: Color::from_rgb(0.04, 0.65, 0.84),
+            cyan: Color::from_rgb(0.18, 0.93, 0.98),
+            purple: Color::from_rgb(0.44, 0.63, 0.75),
+        }
+    }
+}
+
+impl ColorTheme {
+    pub fn to_iced_theme(&self) -> Theme {
+        Theme::custom(
+            "Mission Control".to_string(),
+            Palette {
+                background: self.bg,
+                text: self.fg,
+                primary: self.accent,
+                success: self.blue,
+                danger: self.red,
+            },
+        )
+    }
+}
+
+pub fn with_alpha(c: Color, a: f32) -> Color {
+    Color::from_rgba(c.r, c.g, c.b, a)
+}
+
+pub fn lighten(c: Color, amount: f32) -> Color {
+    Color::from_rgb(
+        (c.r + amount).min(1.0),
+        (c.g + amount).min(1.0),
+        (c.b + amount).min(1.0),
     )
 }
 
-pub fn app_surface() -> impl Fn(&Theme) -> container::Style {
-    |_theme| container::Style {
-        background: Some(Background::Color(BG)),
-        text_color: Some(TEXT),
+pub fn darken(c: Color, amount: f32) -> Color {
+    Color::from_rgb(
+        (c.r - amount).max(0.0),
+        (c.g - amount).max(0.0),
+        (c.b - amount).max(0.0),
+    )
+}
+
+pub fn app_surface(colors: &ColorTheme) -> impl Fn(&Theme) -> container::Style + 'static {
+    let bg = colors.bg;
+    let fg = colors.fg;
+    move |_theme| container::Style {
+        background: Some(Background::Color(bg)),
+        text_color: Some(fg),
         ..container::Style::default()
     }
 }
 
-pub fn panel_style() -> impl Fn(&Theme) -> container::Style {
-    |_theme| container::Style {
-        background: Some(Background::Color(PANEL)),
+pub fn panel_style(colors: &ColorTheme) -> impl Fn(&Theme) -> container::Style + 'static {
+    let bg1 = colors.bg1;
+    let border_focus = colors.border_focus;
+    let fg = colors.fg;
+    move |_theme| container::Style {
+        background: Some(Background::Color(bg1)),
         border: Border {
             radius: 0.0.into(),
             width: 1.0,
-            color: BORDER_HOT,
+            color: border_focus,
         },
         shadow: Shadow::default(),
-        text_color: Some(TEXT),
+        text_color: Some(fg),
         ..container::Style::default()
     }
 }
 
-pub fn card_style() -> impl Fn(&Theme) -> container::Style {
-    |_theme| container::Style {
-        background: Some(Background::Color(PANEL_ALT)),
+pub fn card_style(colors: &ColorTheme) -> impl Fn(&Theme) -> container::Style + 'static {
+    let bg2 = colors.bg2;
+    let border = colors.border;
+    let fg = colors.fg;
+    move |_theme| container::Style {
+        background: Some(Background::Color(bg2)),
         border: Border {
             radius: 0.0.into(),
             width: 1.0,
-            color: BORDER,
+            color: border,
         },
-        text_color: Some(TEXT),
+        text_color: Some(fg),
         ..container::Style::default()
     }
 }
 
-pub fn nav_button_style(active: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
+pub fn nav_button_style(
+    colors: &ColorTheme,
+    active: bool,
+) -> impl Fn(&Theme, button::Status) -> button::Style + 'static {
+    let bg2 = colors.bg2;
+    let bg3 = colors.bg3;
+    let border = colors.border;
+    let border_focus = colors.border_focus;
+    let accent = colors.accent;
+    let fg = colors.fg;
     move |_theme, status| {
-        let (base, border) = if active {
-            (Color::from_rgb(0.06, 0.23, 0.31), BORDER_HOT)
+        let (base, edge) = if active {
+            (lighten(bg3, 0.04), border_focus)
         } else {
-            (PANEL_ALT, BORDER)
+            (bg2, border)
         };
         let background = match status {
             button::Status::Hovered => {
                 if active {
-                    Color::from_rgb(0.08, 0.29, 0.38)
+                    lighten(bg3, 0.08)
                 } else {
-                    PANEL_ALT_2
+                    bg3
                 }
             }
             button::Status::Pressed => {
                 if active {
-                    Color::from_rgb(0.05, 0.18, 0.24)
+                    darken(bg3, 0.02)
                 } else {
-                    Color::from_rgb(0.03, 0.10, 0.15)
+                    darken(bg2, 0.02)
                 }
             }
-            button::Status::Disabled => Color::from_rgba(base.r, base.g, base.b, 0.5),
+            button::Status::Disabled => with_alpha(base, 0.5),
             _ => base,
         };
 
@@ -95,43 +162,45 @@ pub fn nav_button_style(active: bool) -> impl Fn(&Theme, button::Status) -> butt
             border: Border {
                 radius: 0.0.into(),
                 width: 1.0,
-                color: border,
+                color: edge,
             },
-            text_color: if active { ACCENT } else { TEXT },
+            text_color: if active { accent } else { fg },
             shadow: Shadow::default(),
         }
     }
 }
 
-pub fn row_button_style(selected: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
+pub fn row_button_style(
+    colors: &ColorTheme,
+    selected: bool,
+) -> impl Fn(&Theme, button::Status) -> button::Style + 'static {
+    let blue = colors.blue;
+    let border_focus = colors.border_focus;
+    let accent = colors.accent;
+    let fg = colors.fg;
     move |_theme, status| {
         let (base, border, border_width, text_color) = if selected {
-            (
-                Color::from_rgba(ACCENT_ALT.r, ACCENT_ALT.g, ACCENT_ALT.b, 0.16),
-                BORDER_HOT,
-                1.0,
-                ACCENT,
-            )
+            (with_alpha(blue, 0.16), border_focus, 1.0, accent)
         } else {
-            (Color::TRANSPARENT, Color::TRANSPARENT, 0.0, TEXT)
+            (Color::TRANSPARENT, Color::TRANSPARENT, 0.0, fg)
         };
 
         let background = match status {
             button::Status::Hovered => {
                 if selected {
-                    Color::from_rgba(ACCENT_ALT.r, ACCENT_ALT.g, ACCENT_ALT.b, 0.22)
+                    with_alpha(blue, 0.22)
                 } else {
-                    Color::from_rgba(ACCENT_ALT.r, ACCENT_ALT.g, ACCENT_ALT.b, 0.10)
+                    with_alpha(blue, 0.10)
                 }
             }
             button::Status::Pressed => {
                 if selected {
-                    Color::from_rgba(ACCENT_ALT.r, ACCENT_ALT.g, ACCENT_ALT.b, 0.28)
+                    with_alpha(blue, 0.28)
                 } else {
-                    Color::from_rgba(ACCENT_ALT.r, ACCENT_ALT.g, ACCENT_ALT.b, 0.14)
+                    with_alpha(blue, 0.14)
                 }
             }
-            button::Status::Disabled => Color::from_rgba(base.r, base.g, base.b, 0.6),
+            button::Status::Disabled => with_alpha(base, 0.6),
             _ => base,
         };
 
@@ -148,17 +217,24 @@ pub fn row_button_style(selected: bool) -> impl Fn(&Theme, button::Status) -> bu
     }
 }
 
-pub fn utility_button_style(active: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
+pub fn utility_button_style(
+    colors: &ColorTheme,
+    active: bool,
+) -> impl Fn(&Theme, button::Status) -> button::Style + 'static {
+    let bg2 = colors.bg2;
+    let bg3 = colors.bg3;
+    let border = colors.border;
+    let border_focus = colors.border_focus;
+    let accent = colors.accent;
+    let fg_dim = colors.fg_dim;
     move |_theme, status| {
-        let edge = if active { BORDER_HOT } else { BORDER };
-        let text_color = if active { ACCENT } else { MUTED };
+        let edge = if active { border_focus } else { border };
+        let text_color = if active { accent } else { fg_dim };
         let background = match status {
-            button::Status::Hovered => Color::from_rgb(0.04, 0.14, 0.20),
-            button::Status::Pressed => Color::from_rgb(0.03, 0.10, 0.15),
-            button::Status::Disabled => {
-                Color::from_rgba(PANEL_ALT.r, PANEL_ALT.g, PANEL_ALT.b, 0.4)
-            }
-            _ => PANEL_ALT,
+            button::Status::Hovered => bg3,
+            button::Status::Pressed => darken(bg2, 0.02),
+            button::Status::Disabled => with_alpha(bg2, 0.4),
+            _ => bg2,
         };
 
         button::Style {
@@ -174,21 +250,24 @@ pub fn utility_button_style(active: bool) -> impl Fn(&Theme, button::Status) -> 
     }
 }
 
-pub fn table_header_button_style(active: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
+pub fn table_header_button_style(
+    colors: &ColorTheme,
+    active: bool,
+) -> impl Fn(&Theme, button::Status) -> button::Style + 'static {
+    let blue = colors.blue;
+    let border = colors.border;
+    let accent = colors.accent;
+    let fg_dim = colors.fg_dim;
     move |_theme, status| {
         let base_bg = if active {
-            Color::from_rgba(ACCENT_ALT.r, ACCENT_ALT.g, ACCENT_ALT.b, 0.10)
+            with_alpha(blue, 0.10)
         } else {
             Color::TRANSPARENT
         };
         let background = match status {
-            button::Status::Hovered => {
-                Color::from_rgba(ACCENT_ALT.r, ACCENT_ALT.g, ACCENT_ALT.b, 0.14)
-            }
-            button::Status::Pressed => {
-                Color::from_rgba(ACCENT_ALT.r, ACCENT_ALT.g, ACCENT_ALT.b, 0.20)
-            }
-            button::Status::Disabled => Color::from_rgba(base_bg.r, base_bg.g, base_bg.b, 0.6),
+            button::Status::Hovered => with_alpha(blue, 0.14),
+            button::Status::Pressed => with_alpha(blue, 0.20),
+            button::Status::Disabled => with_alpha(base_bg, 0.6),
             _ => base_bg,
         };
 
@@ -197,102 +276,125 @@ pub fn table_header_button_style(active: bool) -> impl Fn(&Theme, button::Status
             border: Border {
                 radius: 0.0.into(),
                 width: if active { 1.0 } else { 0.0 },
-                color: if active { BORDER } else { Color::TRANSPARENT },
+                color: if active { border } else { Color::TRANSPARENT },
             },
-            text_color: if active { ACCENT } else { MUTED },
+            text_color: if active { accent } else { fg_dim },
             shadow: Shadow::default(),
         }
     }
 }
 
-pub fn action_button_style() -> impl Fn(&Theme, button::Status) -> button::Style {
-    |_theme, status| {
+pub fn action_button_style(
+    colors: &ColorTheme,
+) -> impl Fn(&Theme, button::Status) -> button::Style + 'static {
+    let orange = colors.orange;
+    let bg = colors.bg;
+    move |_theme, status| {
         let background = match status {
-            button::Status::Hovered => Color::from_rgb(1.0, 0.76, 0.30),
-            button::Status::Pressed => Color::from_rgb(0.90, 0.58, 0.10),
-            button::Status::Disabled => Color::from_rgba(AMBER.r, AMBER.g, AMBER.b, 0.4),
-            _ => AMBER,
+            button::Status::Hovered => lighten(orange, 0.07),
+            button::Status::Pressed => darken(orange, 0.08),
+            button::Status::Disabled => with_alpha(orange, 0.4),
+            _ => orange,
         };
         button::Style {
             background: Some(Background::Color(background)),
             border: Border {
                 radius: 0.0.into(),
                 width: 1.0,
-                color: Color::from_rgb(0.30, 0.20, 0.04),
+                color: darken(orange, 0.68),
             },
-            text_color: Color::from_rgb(0.06, 0.05, 0.02),
+            text_color: bg,
             shadow: Shadow::default(),
         }
     }
 }
 
-pub fn input_style() -> impl Fn(&Theme, text_input::Status) -> text_input::Style {
-    |_theme, status| {
+pub fn input_style(
+    colors: &ColorTheme,
+) -> impl Fn(&Theme, text_input::Status) -> text_input::Style + 'static {
+    let bg2 = colors.bg2;
+    let border = colors.border;
+    let border_focus = colors.border_focus;
+    let blue = colors.blue;
+    let fg_dim = colors.fg_dim;
+    let fg = colors.fg;
+    let accent = colors.accent;
+    move |_theme, status| {
         let mut style = text_input::Style {
-            background: Background::Color(PANEL_ALT),
+            background: Background::Color(bg2),
             border: Border {
                 radius: 0.0.into(),
                 width: 1.0,
-                color: BORDER,
+                color: border,
             },
-            icon: MUTED,
-            placeholder: MUTED,
-            value: TEXT,
-            selection: Color::from_rgba(ACCENT.r, ACCENT.g, ACCENT.b, 0.35),
+            icon: fg_dim,
+            placeholder: fg_dim,
+            value: fg,
+            selection: with_alpha(accent, 0.35),
         };
 
         style.border.color = match status {
-            text_input::Status::Focused => BORDER_HOT,
-            text_input::Status::Hovered => ACCENT_ALT,
-            text_input::Status::Disabled => Color::from_rgba(BORDER.r, BORDER.g, BORDER.b, 0.5),
-            _ => BORDER,
+            text_input::Status::Focused => border_focus,
+            text_input::Status::Hovered => blue,
+            text_input::Status::Disabled => with_alpha(border, 0.5),
+            _ => border,
         };
 
         if matches!(status, text_input::Status::Disabled) {
-            style.background =
-                Background::Color(Color::from_rgba(PANEL_ALT.r, PANEL_ALT.g, PANEL_ALT.b, 0.6));
-            style.value = MUTED;
+            style.background = Background::Color(with_alpha(bg2, 0.6));
+            style.value = fg_dim;
         }
 
         style
     }
 }
 
-pub fn checkbox_style() -> impl Fn(&Theme, checkbox::Status) -> checkbox::Style {
-    |_theme, status| match status {
+pub fn checkbox_style(
+    colors: &ColorTheme,
+) -> impl Fn(&Theme, checkbox::Status) -> checkbox::Style + 'static {
+    let bg = colors.bg;
+    let bg2 = colors.bg2;
+    let bg3 = colors.bg3;
+    let border = colors.border;
+    let border_focus = colors.border_focus;
+    let blue = colors.blue;
+    let accent = colors.accent;
+    let fg = colors.fg;
+    let fg_dim = colors.fg_dim;
+    move |_theme, status| match status {
         checkbox::Status::Active { is_checked } => checkbox::Style {
-            background: Background::Color(if is_checked { ACCENT_ALT } else { PANEL_ALT }),
-            icon_color: BG,
+            background: Background::Color(if is_checked { blue } else { bg2 }),
+            icon_color: bg,
             border: Border {
                 radius: 0.0.into(),
                 width: 1.0,
-                color: if is_checked { ACCENT } else { BORDER },
+                color: if is_checked { accent } else { border },
             },
-            text_color: Some(TEXT),
+            text_color: Some(fg),
         },
         checkbox::Status::Hovered { is_checked } => checkbox::Style {
-            background: Background::Color(if is_checked { ACCENT } else { PANEL_ALT_2 }),
-            icon_color: BG,
+            background: Background::Color(if is_checked { accent } else { bg3 }),
+            icon_color: bg,
             border: Border {
                 radius: 0.0.into(),
                 width: 1.0,
-                color: if is_checked { BORDER_HOT } else { ACCENT_ALT },
+                color: if is_checked { border_focus } else { blue },
             },
-            text_color: Some(TEXT),
+            text_color: Some(fg),
         },
         checkbox::Status::Disabled { is_checked } => checkbox::Style {
             background: Background::Color(if is_checked {
-                Color::from_rgba(ACCENT_ALT.r, ACCENT_ALT.g, ACCENT_ALT.b, 0.4)
+                with_alpha(blue, 0.4)
             } else {
-                Color::from_rgba(PANEL_ALT.r, PANEL_ALT.g, PANEL_ALT.b, 0.5)
+                with_alpha(bg2, 0.5)
             }),
-            icon_color: MUTED,
+            icon_color: fg_dim,
             border: Border {
                 radius: 0.0.into(),
                 width: 1.0,
-                color: Color::from_rgba(BORDER.r, BORDER.g, BORDER.b, 0.5),
+                color: with_alpha(border, 0.5),
             },
-            text_color: Some(MUTED),
+            text_color: Some(fg_dim),
         },
     }
 }

@@ -8,7 +8,7 @@ pub fn run() -> iced::Result {
     iced::application("Bitcoin Core RPC", update::update, view::view)
         .subscription(subscription::subscriptions)
         .default_font(iced::Font::MONOSPACE)
-        .theme(|_| crate::ui::components::mission_theme())
+        .theme(|state| state.colors.to_iced_theme())
         .run_with(|| {
             (
                 state::State::default(),

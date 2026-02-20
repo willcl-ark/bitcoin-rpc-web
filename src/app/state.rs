@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::core::config_store::ConfigStore;
+use crate::ui::components::ColorTheme;
 use crate::core::dashboard_service::DashboardSnapshot;
 use crate::core::rpc_client::{MAX_ZMQ_BUFFER_LIMIT, MIN_ZMQ_BUFFER_LIMIT, RpcClient, RpcConfig};
 use crate::core::schema::SchemaIndex;
@@ -121,6 +122,7 @@ pub struct ZmqViewState {
 }
 
 pub struct State {
+    pub colors: ColorTheme,
     pub active_tab: Tab,
     pub config: ConfigState,
     pub rpc: RpcState,
@@ -182,6 +184,7 @@ impl State {
             .unwrap_or_default();
 
         let mut state = Self {
+            colors: ColorTheme::default(),
             active_tab: Tab::default(),
             config: ConfigState {
                 store: config_store,

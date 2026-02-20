@@ -9,10 +9,11 @@ use serde_json::Value;
 use crate::app::message::Message;
 use crate::app::state::{PeerSortField, State};
 use crate::core::dashboard_service::PeerSummary;
-use crate::ui::components;
+use crate::ui::components::{self, ColorTheme};
 
 pub fn view(state: &State) -> Element<'_, Message> {
     let fs = state.config.runtime.font_size;
+    let colors = &state.colors;
 
     let zmq_status = if state.zmq.connected {
         format!("connected ({})", state.zmq.connected_address)
@@ -78,13 +79,13 @@ pub fn view(state: &State) -> Element<'_, Message> {
             .max(traffic_fields.len());
 
         row![
-            summary_card("Chain", chain_fields, fs, max_lines)
+            summary_card(colors, "Chain", chain_fields, fs, max_lines)
                 .width(iced::Length::FillPortion(1)),
-            summary_card("Mempool", mempool_fields, fs, max_lines)
+            summary_card(colors, "Mempool", mempool_fields, fs, max_lines)
                 .width(iced::Length::FillPortion(1)),
-            summary_card("Network", network_fields, fs, max_lines)
+            summary_card(colors, "Network", network_fields, fs, max_lines)
                 .width(iced::Length::FillPortion(1)),
-            summary_card("Traffic", traffic_fields, fs, max_lines)
+            summary_card(colors, "Traffic", traffic_fields, fs, max_lines)
                 .width(iced::Length::FillPortion(1)),
         ]
         .spacing(8)
@@ -93,20 +94,21 @@ pub fn view(state: &State) -> Element<'_, Message> {
         container(
             text("NO DASHBOARD DATA YET")
                 .size(fs)
-                .color(components::MUTED),
+                .color(colors.fg_dim),
         )
-        .style(components::card_style())
+        .style(components::card_style(colors))
         .padding(14)
         .into()
     };
 
     let main_body = container(peer_table(state))
-        .style(components::panel_style())
+        .style(components::panel_style(colors))
         .padding(8)
         .width(Fill)
         .height(Fill);
 
     let zmq_summary = summary_card(
+        colors,
         "ZMQ Feed",
         vec![
             ("status", zmq_status),
@@ -141,17 +143,17 @@ pub fn view(state: &State) -> Element<'_, Message> {
             text("TOPIC")
                 .size(fs)
                 .width(iced::Length::Fixed(110.0))
-                .color(components::MUTED),
+                .color(colors.fg_dim),
             text("EVENT")
                 .size(fs)
                 .width(Fill)
-                .color(components::MUTED)
+                .color(colors.fg_dim)
                 .wrapping(Wrapping::None),
             text("TIME")
                 .size(fs)
                 .width(iced::Length::Fixed(95.0))
                 .align_x(alignment::Horizontal::Right)
-                .color(components::MUTED)
+                .color(colors.fg_dim)
                 .wrapping(Wrapping::None),
         ]
         .spacing(4)
@@ -162,7 +164,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
         live_rows = live_rows.push(
             text("No ZMQ events yet.")
                 .size(fs)
-                .color(components::MUTED),
+                .color(colors.fg_dim),
         );
     } else {
         for evt in state.zmq.recent_events.iter().rev() {
@@ -170,7 +172,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
                 row![
                     text(&evt.topic)
                         .size(fs)
-                        .color(components::ACCENT)
+                        .color(colors.accent)
                         .width(iced::Length::Fixed(110.0))
                         .wrapping(Wrapping::None),
                     text(&evt.event_hash)
@@ -193,13 +195,13 @@ pub fn view(state: &State) -> Element<'_, Message> {
     let zmq_panel = container(
         row![
             container(zmq_summary)
-                .style(components::card_style())
+                .style(components::card_style(colors))
                 .padding(8)
                 .height(zmq_height)
                 .width(iced::Length::FillPortion(2)),
             container(
                 column![
-                    text("LIVE EVENTS").size(fs).color(components::ACCENT),
+                    text("LIVE EVENTS").size(fs).color(colors.accent),
                     scrollable(live_rows)
                         .height(Fill)
                         .direction(scrollable::Direction::Vertical(
@@ -211,14 +213,14 @@ pub fn view(state: &State) -> Element<'_, Message> {
                 ]
                 .spacing(4)
             )
-            .style(components::card_style())
+            .style(components::card_style(colors))
             .padding(8)
             .height(zmq_height)
             .width(iced::Length::FillPortion(5)),
         ]
         .spacing(8),
     )
-    .style(components::panel_style())
+    .style(components::panel_style(colors))
     .padding(8)
     .width(Fill);
 
@@ -226,10 +228,10 @@ pub fn view(state: &State) -> Element<'_, Message> {
         row![
             text("DASHBOARD")
                 .size(fs + 10)
-                .color(components::ACCENT),
+                .color(colors.accent),
             text("TELEMETRY + PEERING")
                 .size(fs.saturating_sub(2))
-                .color(components::AMBER)
+                .color(colors.orange)
         ]
         .spacing(12),
         top_strip,
@@ -244,7 +246,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
         root = root.push(
             text(format!("ERR: {error}"))
                 .size(fs)
-                .color(components::ERROR_RED),
+                .color(colors.red),
         );
     }
 
@@ -254,6 +256,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
 fn peer_table(state: &State) -> Element<'_, Message> {
     let level = state.dashboard.netinfo_level;
     let fs = state.config.runtime.font_size;
+    let colors = &state.colors;
 
     macro_rules! cell {
         ($content:expr, $w:expr) => {
@@ -264,19 +267,19 @@ fn peer_table(state: &State) -> Element<'_, Message> {
         };
     }
 
-    let mut level_btns = row![text("PEERS").size(fs + 1).color(components::ACCENT)]
+    let mut level_btns = row![text("PEERS").size(fs + 1).color(colors.accent)]
         .spacing(6)
         .align_y(alignment::Vertical::Center);
     for i in 0..=4u8 {
         level_btns = level_btns.push(
             button(
                 text(i.to_string()).size(fs).color(if i == level {
-                    components::ACCENT
+                    colors.accent
                 } else {
-                    components::MUTED
+                    colors.fg_dim
                 }),
             )
-            .style(components::utility_button_style(i == level))
+            .style(components::utility_button_style(colors, i == level))
             .padding([1, 6])
             .on_press(Message::NetinfoLevelChanged(i)),
         );
@@ -293,30 +296,30 @@ fn peer_table(state: &State) -> Element<'_, Message> {
 
             let mut header = row![].spacing(2);
             header = header
-                .push(sort_header(state, "<->", PeerSortField::Direction).width(iced::Length::Fixed(35.0)))
-                .push(sort_header(state, "type", PeerSortField::ConnectionType).width(iced::Length::Fixed(65.0)))
-                .push(sort_header(state, "net", PeerSortField::Network).width(iced::Length::Fixed(55.0)))
-                .push(cell!("serv", 60.0).color(components::MUTED))
-                .push(cell!("v", 22.0).color(components::MUTED))
-                .push(sort_header(state, "mping", PeerSortField::MinPing).width(iced::Length::Fixed(68.0)))
-                .push(sort_header(state, "ping", PeerSortField::Ping).width(iced::Length::Fixed(60.0)))
-                .push(cell!("send", 50.0).color(components::MUTED))
-                .push(cell!("recv", 50.0).color(components::MUTED))
-                .push(cell!("txn", 45.0).color(components::MUTED))
-                .push(cell!("blk", 45.0).color(components::MUTED))
-                .push(cell!("hb", 28.0).color(components::MUTED))
-                .push(cell!("addrp", 55.0).color(components::MUTED))
-                .push(cell!("addrl", 50.0).color(components::MUTED))
-                .push(sort_header(state, "age", PeerSortField::Age).width(iced::Length::Fixed(50.0)))
-                .push(sort_header(state, "id", PeerSortField::Id).width(iced::Length::Fixed(38.0)));
+                .push(sort_header(colors, state, "<->", PeerSortField::Direction).width(iced::Length::Fixed(35.0)))
+                .push(sort_header(colors, state, "type", PeerSortField::ConnectionType).width(iced::Length::Fixed(65.0)))
+                .push(sort_header(colors, state, "net", PeerSortField::Network).width(iced::Length::Fixed(55.0)))
+                .push(cell!("serv", 60.0).color(colors.fg_dim))
+                .push(cell!("v", 22.0).color(colors.fg_dim))
+                .push(sort_header(colors, state, "mping", PeerSortField::MinPing).width(iced::Length::Fixed(68.0)))
+                .push(sort_header(colors, state, "ping", PeerSortField::Ping).width(iced::Length::Fixed(60.0)))
+                .push(cell!("send", 50.0).color(colors.fg_dim))
+                .push(cell!("recv", 50.0).color(colors.fg_dim))
+                .push(cell!("txn", 45.0).color(colors.fg_dim))
+                .push(cell!("blk", 45.0).color(colors.fg_dim))
+                .push(cell!("hb", 28.0).color(colors.fg_dim))
+                .push(cell!("addrp", 55.0).color(colors.fg_dim))
+                .push(cell!("addrl", 50.0).color(colors.fg_dim))
+                .push(sort_header(colors, state, "age", PeerSortField::Age).width(iced::Length::Fixed(50.0)))
+                .push(sort_header(colors, state, "id", PeerSortField::Id).width(iced::Length::Fixed(38.0)));
             if level == 2 || level == 4 {
                 header = header.push(
-                    sort_header(state, "address", PeerSortField::Address).width(Fill),
+                    sort_header(colors, state, "address", PeerSortField::Address).width(Fill),
                 );
             }
             if level == 3 || level == 4 {
                 header = header.push(
-                    sort_header(state, "version", PeerSortField::Version).width(Fill),
+                    sort_header(colors, state, "version", PeerSortField::Version).width(Fill),
                 );
             }
             content = content.push(header);
@@ -328,27 +331,27 @@ fn peer_table(state: &State) -> Element<'_, Message> {
                 .push(cell!("", 55.0))
                 .push(cell!("", 60.0))
                 .push(cell!("", 22.0))
-                .push(cell!("ms", 68.0).color(components::MUTED))
-                .push(cell!("ms", 60.0).color(components::MUTED))
-                .push(cell!("sec", 50.0).color(components::MUTED))
-                .push(cell!("sec", 50.0).color(components::MUTED))
-                .push(cell!("min", 45.0).color(components::MUTED))
-                .push(cell!("min", 45.0).color(components::MUTED))
+                .push(cell!("ms", 68.0).color(colors.fg_dim))
+                .push(cell!("ms", 60.0).color(colors.fg_dim))
+                .push(cell!("sec", 50.0).color(colors.fg_dim))
+                .push(cell!("sec", 50.0).color(colors.fg_dim))
+                .push(cell!("min", 45.0).color(colors.fg_dim))
+                .push(cell!("min", 45.0).color(colors.fg_dim))
                 .push(cell!("", 28.0))
                 .push(cell!("", 55.0))
                 .push(cell!("", 50.0))
-                .push(cell!("min", 50.0).color(components::MUTED))
+                .push(cell!("min", 50.0).color(colors.fg_dim))
                 .push(cell!("", 38.0));
             content = content.push(units);
 
             for peer in sorted_peers(state, &snapshot.peers) {
                 let selected = state.dashboard.selected_peer_id == Some(peer.id);
                 let type_short = connection_type_short(&peer.connection_type);
-                let type_color = connection_type_color(&peer.connection_type);
+                let type_color = connection_type_color(colors, &peer.connection_type);
                 let dir_color = if peer.inbound {
-                    components::AMBER
+                    colors.orange
                 } else {
-                    components::ACCENT_ALT
+                    colors.blue
                 };
                 let hb = match (peer.is_bip152_hb_to, peer.is_bip152_hb_from) {
                     (true, true) => ".*",
@@ -379,8 +382,8 @@ fn peer_table(state: &State) -> Element<'_, Message> {
                     .push(cell!(&peer.network, 55.0))
                     .push(cell!(&peer.services, 60.0))
                     .push(cell!(peer.transport_version, 22.0))
-                    .push(cell!(ping_ms_string(peer.min_ping), 68.0).color(ping_color(peer.min_ping)))
-                    .push(cell!(ping_ms_string(peer.ping_time), 60.0).color(ping_color(peer.ping_time)))
+                    .push(cell!(ping_ms_string(peer.min_ping), 68.0).color(ping_color(colors, peer.min_ping)))
+                    .push(cell!(ping_ms_string(peer.ping_time), 60.0).color(ping_color(colors, peer.ping_time)))
                     .push(cell!(relative_secs(now, peer.last_send), 50.0))
                     .push(cell!(relative_secs(now, peer.last_recv), 50.0))
                     .push(cell!(txn, 45.0))
@@ -410,16 +413,16 @@ fn peer_table(state: &State) -> Element<'_, Message> {
                 content = content.push(
                     button(data_row)
                         .width(Fill)
-                        .style(components::row_button_style(selected))
+                        .style(components::row_button_style(colors, selected))
                         .padding([1, 4])
                         .on_press(Message::DashboardPeerSelected(peer.id)),
                 );
             }
         }
 
-        content = content.push(connection_counts(&snapshot.peers, fs));
+        content = content.push(connection_counts(colors, &snapshot.peers, fs));
     } else {
-        content = content.push(text("No peer data").size(fs).color(components::MUTED));
+        content = content.push(text("No peer data").size(fs).color(colors.fg_dim));
     }
 
     let detail_panel = if let Some(snapshot) = &state.dashboard.snapshot
@@ -432,17 +435,17 @@ fn peer_table(state: &State) -> Element<'_, Message> {
                     row![
                         text(format!("PEER {selected_id} DETAIL"))
                             .size(fs)
-                            .color(components::ACCENT),
-                        button(text("Close").size(fs).color(components::MUTED))
-                            .style(components::utility_button_style(false))
+                            .color(colors.accent),
+                        button(text("Close").size(fs).color(colors.fg_dim))
+                            .style(components::utility_button_style(colors, false))
                             .on_press(Message::DashboardPeerDetailClosed),
                     ]
                     .spacing(8),
-                    scrollable(peer_detail_grid(raw, fs)).height(170),
+                    scrollable(peer_detail_grid(colors, raw, fs)).height(170),
                 ]
                 .spacing(6),
             )
-            .style(components::card_style())
+            .style(components::card_style(colors))
             .padding(8)
             .width(Fill),
         )
@@ -459,6 +462,7 @@ fn peer_table(state: &State) -> Element<'_, Message> {
 }
 
 fn summary_card<'a>(
+    colors: &ColorTheme,
     title: &'a str,
     lines: Vec<(&'a str, String)>,
     fs: u16,
@@ -468,15 +472,15 @@ fn summary_card<'a>(
     let mut content = column![
         text(title.to_uppercase())
             .size(fs)
-            .color(components::ACCENT)
+            .color(colors.accent)
     ]
     .spacing(3);
     for (key, value) in lines {
         content = content.push(
             row![
-                text(format!("{key}:")).size(fs).color(components::MUTED),
+                text(format!("{key}:")).size(fs).color(colors.fg_dim),
                 horizontal_space(),
-                text(value).size(fs).color(components::TEXT)
+                text(value).size(fs).color(colors.fg)
             ]
             .spacing(3),
         );
@@ -486,10 +490,11 @@ fn summary_card<'a>(
     }
     container(content)
         .padding(8)
-        .style(components::card_style())
+        .style(components::card_style(colors))
 }
 
 fn sort_header<'a>(
+    colors: &ColorTheme,
     state: &State,
     label: &'a str,
     field: PeerSortField,
@@ -506,11 +511,11 @@ fn sort_header<'a>(
     };
     let fs = state.config.runtime.font_size;
     button(text(format!("{label}{marker}")).size(fs).color(if active {
-        components::ACCENT
+        colors.accent
     } else {
-        components::MUTED
+        colors.fg_dim
     }))
-    .style(components::table_header_button_style(active))
+    .style(components::table_header_button_style(colors, active))
     .padding([1, 2])
     .on_press(Message::DashboardPeerSortPressed(field))
 }
@@ -568,12 +573,12 @@ fn format_event_time(timestamp: u64) -> String {
         .unwrap_or_else(|| timestamp.to_string())
 }
 
-fn peer_detail_grid<'a>(raw: &'a Value, fs: u16) -> Element<'a, Message> {
+fn peer_detail_grid<'a>(colors: &ColorTheme, raw: &'a Value, fs: u16) -> Element<'a, Message> {
     let items = peer_detail_items(raw);
     if items.is_empty() {
         return text("No peer detail available.")
             .size(fs)
-            .color(components::MUTED)
+            .color(colors.fg_dim)
             .into();
     }
 
@@ -586,10 +591,10 @@ fn peer_detail_grid<'a>(raw: &'a Value, fs: u16) -> Element<'a, Message> {
                     column![
                         text(key.to_uppercase())
                             .size(fs.saturating_sub(3))
-                            .color(components::MUTED),
+                            .color(colors.fg_dim),
                         text(value.clone())
                             .size(fs.saturating_sub(2))
-                            .color(components::TEXT)
+                            .color(colors.fg)
                     ]
                     .spacing(1),
                 )
@@ -709,15 +714,15 @@ fn connection_type_short(kind: &str) -> &str {
     }
 }
 
-fn connection_type_color(kind: &str) -> Color {
+fn connection_type_color(colors: &ColorTheme, kind: &str) -> Color {
     match kind {
-        "outbound-full-relay" => components::GREEN,
-        "block-relay-only" => Color::from_rgb(0.45, 0.76, 0.98),
-        "manual" => Color::from_rgb(0.96, 0.79, 0.27),
-        "feeler" => Color::from_rgb(0.63, 0.83, 1.0),
-        "addr-fetch" => Color::from_rgb(0.96, 0.70, 0.20),
-        "inbound" => Color::from_rgb(0.30, 0.84, 1.0),
-        _ => components::TEXT,
+        "outbound-full-relay" => colors.green,
+        "block-relay-only" => colors.blue,
+        "manual" => colors.yellow,
+        "feeler" => colors.cyan,
+        "addr-fetch" => colors.orange,
+        "inbound" => colors.cyan,
+        _ => colors.fg,
     }
 }
 
@@ -740,7 +745,7 @@ fn relative_mins(now: i64, ts: i64) -> String {
     ((now - ts) / 60).to_string()
 }
 
-fn connection_counts<'a>(peers: &[PeerSummary], fs: u16) -> Element<'a, Message> {
+fn connection_counts<'a>(colors: &ColorTheme, peers: &[PeerSummary], fs: u16) -> Element<'a, Message> {
     let known_nets = ["ipv4", "ipv6", "onion", "i2p", "cjdns"];
     let active_nets: Vec<&str> = known_nets
         .iter()
@@ -758,13 +763,16 @@ fn connection_counts<'a>(peers: &[PeerSummary], fs: u16) -> Element<'a, Message>
             .count()
     };
 
+    let fg_dim = colors.fg_dim;
+    let fg = colors.fg;
+
     let mut header = row![].spacing(2);
     header = header.push(text("").width(iced::Length::Fixed(w_label)));
     for net in &active_nets {
         header = header.push(
             text(*net)
                 .size(fs)
-                .color(components::MUTED)
+                .color(fg_dim)
                 .width(iced::Length::Fixed(w_col))
                 .align_x(alignment::Horizontal::Right),
         );
@@ -773,14 +781,14 @@ fn connection_counts<'a>(peers: &[PeerSummary], fs: u16) -> Element<'a, Message>
         .push(
             text("total")
                 .size(fs)
-                .color(components::MUTED)
+                .color(fg_dim)
                 .width(iced::Length::Fixed(w_col))
                 .align_x(alignment::Horizontal::Right),
         )
         .push(
             text("block")
                 .size(fs)
-                .color(components::MUTED)
+                .color(fg_dim)
                 .width(iced::Length::Fixed(w_col))
                 .align_x(alignment::Horizontal::Right),
         );
@@ -792,7 +800,7 @@ fn connection_counts<'a>(peers: &[PeerSummary], fs: u16) -> Element<'a, Message>
         r = r.push(
             text(label)
                 .size(fs)
-                .color(components::MUTED)
+                .color(fg_dim)
                 .width(iced::Length::Fixed(w_label)),
         );
         let mut total = 0usize;
@@ -802,7 +810,7 @@ fn connection_counts<'a>(peers: &[PeerSummary], fs: u16) -> Element<'a, Message>
             r = r.push(
                 text(c.to_string())
                     .size(fs)
-                    .color(components::TEXT)
+                    .color(fg)
                     .width(iced::Length::Fixed(w_col))
                     .align_x(alignment::Horizontal::Right),
             );
@@ -810,7 +818,7 @@ fn connection_counts<'a>(peers: &[PeerSummary], fs: u16) -> Element<'a, Message>
         r = r.push(
             text(total.to_string())
                 .size(fs)
-                .color(components::TEXT)
+                .color(fg)
                 .width(iced::Length::Fixed(w_col))
                 .align_x(alignment::Horizontal::Right),
         );
@@ -829,7 +837,7 @@ fn connection_counts<'a>(peers: &[PeerSummary], fs: u16) -> Element<'a, Message>
                 String::new()
             })
             .size(fs)
-            .color(components::TEXT)
+            .color(fg)
             .width(iced::Length::Fixed(w_col))
             .align_x(alignment::Horizontal::Right),
         );
@@ -839,34 +847,15 @@ fn connection_counts<'a>(peers: &[PeerSummary], fs: u16) -> Element<'a, Message>
     grid.into()
 }
 
-fn ping_color(ping_secs: Option<f64>) -> Color {
+fn ping_color(colors: &ColorTheme, ping_secs: Option<f64>) -> Color {
     let Some(ping) = ping_secs else {
-        return components::MUTED;
+        return colors.fg_dim;
     };
-    if ping <= 0.1 {
-        components::GREEN
-    } else if ping <= 0.5 {
-        lerp_color(
-            components::GREEN,
-            components::AMBER,
-            ((ping - 0.1) / 0.4) as f32,
-        )
-    } else if ping <= 1.0 {
-        lerp_color(
-            components::AMBER,
-            components::ERROR_RED,
-            ((ping - 0.5) / 0.5) as f32,
-        )
+    if ping <= 0.25 {
+        colors.green
+    } else if ping <= 0.75 {
+        colors.orange
     } else {
-        components::ERROR_RED
+        colors.red
     }
-}
-
-fn lerp_color(a: Color, b: Color, t: f32) -> Color {
-    let k = t.clamp(0.0, 1.0);
-    Color::from_rgb(
-        a.r + (b.r - a.r) * k,
-        a.g + (b.g - a.g) * k,
-        a.b + (b.b - a.b) * k,
-    )
 }

@@ -9,6 +9,7 @@ use crate::ui::components;
 
 pub fn view(state: &State) -> Element<'_, Message> {
     let fs = state.config.runtime.font_size;
+    let colors = &state.colors;
 
     let method_list = if let Some(schema) = &state.rpc.schema {
         let mut grouped: BTreeMap<String, Vec<_>> = BTreeMap::new();
@@ -19,10 +20,10 @@ pub fn view(state: &State) -> Element<'_, Message> {
                 .push(method);
         }
 
-        let mut list = column![text("METHOD GROUPS").size(fs + 2).color(components::ACCENT)].spacing(6);
+        let mut list = column![text("METHOD GROUPS").size(fs + 2).color(colors.accent)].spacing(6);
 
         if grouped.is_empty() {
-            list = list.push(text("No methods match current search.").size(fs).color(components::MUTED));
+            list = list.push(text("No methods match current search.").size(fs).color(colors.fg_dim));
         }
 
         for (category, mut methods) in grouped {
@@ -34,7 +35,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
             list = list.push(
                 button(text(category_label).size(fs))
                     .width(Fill)
-                    .style(components::utility_button_style(!collapsed))
+                    .style(components::utility_button_style(colors, !collapsed))
                     .padding([4, 8])
                     .on_press(Message::RpcCategoryToggled(category.clone())),
             );
@@ -53,7 +54,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
                 list = list.push(
                     button(text(label).size(fs))
                         .width(Fill)
-                        .style(components::row_button_style(selected))
+                        .style(components::row_button_style(colors, selected))
                         .padding([4, 8])
                         .on_press(Message::RpcMethodSelected(method.name.clone())),
                 );
@@ -81,33 +82,33 @@ pub fn view(state: &State) -> Element<'_, Message> {
         .unwrap_or_else(|| "Select a method from the list.".to_string());
 
     let execute_button = if state.rpc.execute_in_flight {
-        button("Running...").style(components::action_button_style())
+        button("Running...").style(components::action_button_style(colors))
     } else {
         button("Execute")
-            .style(components::action_button_style())
+            .style(components::action_button_style(colors))
             .on_press(Message::RpcExecutePressed)
     };
 
     let mut right = column![
         text("RPC EXECUTION CONSOLE")
             .size(fs + 10)
-            .color(components::ACCENT),
+            .color(colors.accent),
         text("SEARCH, INSPECT, EXECUTE")
             .size(fs.saturating_sub(2))
-            .color(components::MUTED),
+            .color(colors.fg_dim),
         text_input("Search methods", &state.rpc.search)
             .on_input(Message::RpcSearchChanged)
             .padding(8)
-            .style(components::input_style()),
+            .style(components::input_style(colors)),
         text(format!(
             "Selected method: {}",
             state.rpc.selected_method.as_deref().unwrap_or("(none)")
         ))
         .size(fs),
-        text(selected_summary).size(fs).color(components::MUTED),
+        text(selected_summary).size(fs).color(colors.fg_dim),
         checkbox("Batch mode", state.rpc.batch_mode)
             .on_toggle(Message::RpcBatchModeToggled)
-            .style(components::checkbox_style()),
+            .style(components::checkbox_style(colors)),
     ]
     .spacing(10);
 
@@ -119,14 +120,14 @@ pub fn view(state: &State) -> Element<'_, Message> {
             )
             .on_input(Message::RpcBatchChanged)
             .padding(8)
-            .style(components::input_style()),
+            .style(components::input_style(colors)),
         );
     } else {
         right = right.push(text("Params JSON").size(fs)).push(
             text_input("[]", &state.rpc.params_input)
                 .on_input(Message::RpcParamsChanged)
                 .padding(8)
-                .style(components::input_style()),
+                .style(components::input_style(colors)),
         );
     }
 
@@ -136,34 +137,34 @@ pub fn view(state: &State) -> Element<'_, Message> {
         right = right.push(
             text(format!("Schema error: {error}"))
                 .size(fs)
-                .color(components::ERROR_RED),
+                .color(colors.red),
         );
     }
     if let Some(error) = &state.rpc.error {
         right = right.push(
             text(format!("ERR: {error}"))
                 .size(fs)
-                .color(components::ERROR_RED),
+                .color(colors.red),
         );
     }
     if let Some(response) = &state.rpc.response {
         right = right
-            .push(text("RESPONSE").size(fs).color(components::ACCENT))
+            .push(text("RESPONSE").size(fs).color(colors.accent))
             .push(
-                container(scrollable(text(response).size(fs).color(components::MUTED)))
-                    .style(components::card_style())
+                container(scrollable(text(response).size(fs).color(colors.fg_dim)))
+                    .style(components::card_style(colors))
                     .padding(10),
             );
     }
 
     let layout = row![
         container(method_list)
-            .style(components::panel_style())
+            .style(components::panel_style(colors))
             .padding(12)
             .width(300)
             .height(Fill),
         container(right)
-            .style(components::panel_style())
+            .style(components::panel_style(colors))
             .padding(16)
             .width(Fill)
     ]
