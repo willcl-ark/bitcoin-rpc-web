@@ -280,38 +280,12 @@ fn is_cgnat(v4: Ipv4Addr) -> bool {
 }
 
 fn basic_auth(user: &str, password: &str) -> String {
-    use std::io::Write;
-
-    let mut buffer = Vec::new();
-    write!(buffer, "{user}:{password}").expect("in-memory write should never fail");
-    format!("Basic {}", base64_encode(&buffer))
-}
-
-fn base64_encode(data: &[u8]) -> String {
-    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut output = String::new();
-
-    for chunk in data.chunks(3) {
-        let b0 = chunk[0] as u32;
-        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
-        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
-        let triple = (b0 << 16) | (b1 << 8) | b2;
-
-        output.push(CHARS[((triple >> 18) & 0x3f) as usize] as char);
-        output.push(CHARS[((triple >> 12) & 0x3f) as usize] as char);
-        output.push(if chunk.len() > 1 {
-            CHARS[((triple >> 6) & 0x3f) as usize] as char
-        } else {
-            '='
-        });
-        output.push(if chunk.len() > 2 {
-            CHARS[(triple & 0x3f) as usize] as char
-        } else {
-            '='
-        });
-    }
-
-    output
+    use base64::Engine;
+    let credentials = format!("{user}:{password}");
+    format!(
+        "Basic {}",
+        base64::engine::general_purpose::STANDARD.encode(credentials)
+    )
 }
 
 #[cfg(test)]
