@@ -6,6 +6,7 @@ use iced::widget::pane_grid;
 #[derive(Debug, Clone)]
 pub enum Message {
     ThemeChanged(ThemeName),
+    SidebarTogglePressed,
     SelectTab(Tab),
     ConfigUrlChanged(String),
     ConfigUserChanged(String),

@@ -22,6 +22,10 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
             state.colors = name.colors();
             Task::none()
         }
+        Message::SidebarTogglePressed => {
+            state.sidebar_visible = !state.sidebar_visible;
+            Task::none()
+        }
         Message::SelectTab(tab) => {
             state.active_tab = tab;
             Task::none()

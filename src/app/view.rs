@@ -55,16 +55,20 @@ pub fn view(state: &State) -> Element<'_, Message> {
         Tab::Config => crate::ui::config::view(state),
     };
 
-    let main_area = row![
-        container(nav)
-            .style(components::panel_style(colors))
-            .width(235)
-            .height(Fill),
-        content
-    ]
-    .spacing(8)
-    .height(Fill)
-    .width(Fill);
+    let main_area = if state.sidebar_visible {
+        row![
+            container(nav)
+                .style(components::panel_style(colors))
+                .width(235)
+                .height(Fill),
+            content
+        ]
+        .spacing(8)
+        .height(Fill)
+        .width(Fill)
+    } else {
+        row![content].height(Fill).width(Fill)
+    };
 
     container(column![main_area, crate::ui::music_bar::view(state)].width(Fill))
         .style(components::app_surface(colors))

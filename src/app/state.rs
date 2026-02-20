@@ -177,6 +177,7 @@ pub struct ZmqViewState {
 pub struct State {
     pub colors: ColorTheme,
     pub theme_name: ThemeName,
+    pub sidebar_visible: bool,
     pub active_tab: Tab,
     pub config: ConfigState,
     pub rpc: RpcState,
@@ -240,6 +241,7 @@ impl State {
         let mut state = Self {
             colors: ColorTheme::default(),
             theme_name: ThemeName::default(),
+            sidebar_visible: true,
             active_tab: Tab::default(),
             config: ConfigState {
                 store: config_store,
