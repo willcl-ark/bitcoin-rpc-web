@@ -2,12 +2,33 @@ use iced::widget::{button, column, container, row, text};
 use iced::{Element, Fill};
 
 use crate::app::message::Message;
-use crate::app::state::{State, Tab};
+use crate::app::state::{State, Tab, ThemeName};
 use crate::ui::components::{self, ColorTheme};
 
 pub fn view(state: &State) -> Element<'_, Message> {
     let fs = state.config.runtime.font_size;
     let colors = &state.colors;
+    let mut theme_row = row![].spacing(3);
+    for name in ThemeName::ALL {
+        theme_row = theme_row.push(
+            button(
+                text(name.label())
+                    .size(fs.saturating_sub(4))
+                    .color(if *name == state.theme_name {
+                        colors.accent
+                    } else {
+                        colors.fg_dim
+                    }),
+            )
+            .style(components::utility_button_style(
+                colors,
+                *name == state.theme_name,
+            ))
+            .padding([1, 4])
+            .on_press(Message::ThemeChanged(*name)),
+        );
+    }
+
     let nav = column![
         text("BITCOIN CORE").size(fs + 7).color(colors.accent),
         text("NODE CONTROL")
@@ -19,6 +40,10 @@ pub fn view(state: &State) -> Element<'_, Message> {
         nav_button(colors, "DASHBOARD", Tab::Dashboard, state.active_tab, fs),
         nav_button(colors, "RPC", Tab::Rpc, state.active_tab, fs),
         nav_button(colors, "CONFIG", Tab::Config, state.active_tab, fs),
+        text("THEME")
+            .size(fs.saturating_sub(4))
+            .color(colors.orange),
+        theme_row,
     ]
     .spacing(6)
     .padding(12)

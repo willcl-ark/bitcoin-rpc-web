@@ -1,9 +1,10 @@
-use crate::app::state::{DashboardPartialSet, PeerSortField, Tab};
+use crate::app::state::{DashboardPartialSet, PeerSortField, Tab, ThemeName};
 use crate::core::dashboard_service::{DashboardPartialUpdate, DashboardSnapshot};
 use crate::core::rpc_client::RpcConfig;
 
 #[derive(Debug, Clone)]
 pub enum Message {
+    ThemeChanged(ThemeName),
     SelectTab(Tab),
     ConfigUrlChanged(String),
     ConfigUserChanged(String),

@@ -17,6 +17,11 @@ const ZMQ_REFRESH_DEBOUNCE_MS: u64 = 800;
 
 pub fn update(state: &mut State, message: Message) -> Task<Message> {
     match message {
+        Message::ThemeChanged(name) => {
+            state.theme_name = name;
+            state.colors = name.colors();
+            Task::none()
+        }
         Message::SelectTab(tab) => {
             state.active_tab = tab;
             Task::none()

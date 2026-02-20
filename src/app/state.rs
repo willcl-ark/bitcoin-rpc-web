@@ -11,6 +11,50 @@ use crate::music::{MusicRuntime, MusicSnapshot};
 use crate::zmq::{ZmqHandle, ZmqSharedState, start_zmq_subscriber, stop_zmq_subscriber};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ThemeName {
+    #[default]
+    MissionControl,
+    Everforest,
+    GruvboxMaterial,
+    MaterialDeepOcean,
+    Nord,
+    OneDark,
+}
+
+impl ThemeName {
+    pub const ALL: &[Self] = &[
+        Self::MissionControl,
+        Self::Everforest,
+        Self::GruvboxMaterial,
+        Self::MaterialDeepOcean,
+        Self::Nord,
+        Self::OneDark,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::MissionControl => "MC",
+            Self::Everforest => "EF",
+            Self::GruvboxMaterial => "GR",
+            Self::MaterialDeepOcean => "MA",
+            Self::Nord => "NO",
+            Self::OneDark => "OD",
+        }
+    }
+
+    pub fn colors(self) -> ColorTheme {
+        match self {
+            Self::MissionControl => ColorTheme::default(),
+            Self::Everforest => ColorTheme::everforest(),
+            Self::GruvboxMaterial => ColorTheme::gruvbox_material(),
+            Self::MaterialDeepOcean => ColorTheme::material_deep_ocean(),
+            Self::Nord => ColorTheme::nord(),
+            Self::OneDark => ColorTheme::onedark(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Tab {
     #[default]
     Dashboard,
@@ -123,6 +167,7 @@ pub struct ZmqViewState {
 
 pub struct State {
     pub colors: ColorTheme,
+    pub theme_name: ThemeName,
     pub active_tab: Tab,
     pub config: ConfigState,
     pub rpc: RpcState,
@@ -185,6 +230,7 @@ impl State {
 
         let mut state = Self {
             colors: ColorTheme::default(),
+            theme_name: ThemeName::default(),
             active_tab: Tab::default(),
             config: ConfigState {
                 store: config_store,
