@@ -2,7 +2,8 @@ use iced::widget::{button, column, container, row, scrollable, text};
 use iced::{Element, Fill};
 
 use crate::app::message::Message;
-use crate::app::state::State;
+use crate::app::state::{PeerSortField, State};
+use crate::core::dashboard_service::PeerSummary;
 use crate::ui::components;
 
 pub fn view(state: &State) -> Element<'_, Message> {
@@ -89,7 +90,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
     .spacing(12)
     .height(Fill);
 
-    let zmq_panel = container(summary_card(
+    let zmq_summary = summary_card(
         "ZMQ Feed",
         vec![
             ("status", zmq_status),
@@ -114,7 +115,58 @@ pub fn view(state: &State) -> Element<'_, Message> {
                     .unwrap_or_else(|| "-".to_string()),
             ),
         ],
-    ))
+    );
+
+    let mut live_rows = column![
+        row![
+            text("Topic")
+                .width(iced::Length::FillPortion(1))
+                .color(components::MUTED),
+            text("Event")
+                .width(iced::Length::FillPortion(5))
+                .color(components::MUTED),
+            text("Time")
+                .width(iced::Length::FillPortion(1))
+                .color(components::MUTED),
+        ]
+        .spacing(6)
+    ]
+    .spacing(4);
+
+    if state.zmq_recent_events.is_empty() {
+        live_rows = live_rows.push(text("No ZMQ events yet.").color(components::MUTED));
+    } else {
+        for evt in &state.zmq_recent_events {
+            live_rows = live_rows.push(
+                row![
+                    text(&evt.topic).width(iced::Length::FillPortion(1)),
+                    text(&evt.event_hash).width(iced::Length::FillPortion(5)),
+                    text(evt.timestamp.to_string()).width(iced::Length::FillPortion(1)),
+                ]
+                .spacing(6),
+            );
+        }
+    }
+
+    let zmq_panel = container(
+        row![
+            container(zmq_summary)
+                .style(components::card_style())
+                .padding(10)
+                .width(iced::Length::FillPortion(2)),
+            container(
+                column![
+                    text("Live Events").size(18).color(components::TEXT),
+                    scrollable(live_rows).height(160)
+                ]
+                .spacing(6)
+            )
+            .style(components::card_style())
+            .padding(10)
+            .width(iced::Length::FillPortion(5)),
+        ]
+        .spacing(10),
+    )
     .style(components::panel_style())
     .padding(10)
     .width(Fill);
@@ -140,28 +192,19 @@ pub fn view(state: &State) -> Element<'_, Message> {
 
 fn peer_table(state: &State) -> Element<'_, Message> {
     let header = row![
-        text("ID")
-            .width(iced::Length::FillPortion(1))
-            .color(components::MUTED),
-        text("Address")
-            .width(iced::Length::FillPortion(4))
-            .color(components::MUTED),
-        text("Dir")
-            .width(iced::Length::FillPortion(1))
-            .color(components::MUTED),
-        text("Type")
-            .width(iced::Length::FillPortion(2))
-            .color(components::MUTED),
-        text("Ping")
-            .width(iced::Length::FillPortion(1))
-            .color(components::MUTED),
+        sort_header(state, "ID", PeerSortField::Id).width(iced::Length::FillPortion(1)),
+        sort_header(state, "Address", PeerSortField::Address).width(iced::Length::FillPortion(4)),
+        sort_header(state, "Dir", PeerSortField::Direction).width(iced::Length::FillPortion(1)),
+        sort_header(state, "Type", PeerSortField::ConnectionType)
+            .width(iced::Length::FillPortion(2)),
+        sort_header(state, "Ping", PeerSortField::Ping).width(iced::Length::FillPortion(1)),
     ]
     .spacing(8);
 
     let mut rows = column![text("Peers").size(24).color(components::TEXT), header].spacing(8);
 
     if let Some(snapshot) = &state.dashboard_snapshot {
-        for peer in &snapshot.peers {
+        for peer in sorted_peers(state, &snapshot.peers) {
             let selected = state.dashboard_selected_peer_id == Some(peer.id);
             let ping = peer
                 .ping_time
@@ -245,4 +288,48 @@ fn summary_card<'a>(
     container(content)
         .padding(12)
         .style(components::card_style())
+}
+
+fn sort_header<'a>(
+    state: &State,
+    label: &'a str,
+    field: PeerSortField,
+) -> iced::widget::Button<'a, Message> {
+    let active = state.dashboard_peer_sort == field;
+    let marker = if active {
+        if state.dashboard_peer_sort_desc {
+            " v"
+        } else {
+            " ^"
+        }
+    } else {
+        ""
+    };
+    button(
+        text(format!("{label}{marker}"))
+            .size(13)
+            .color(components::MUTED),
+    )
+    .style(components::nav_button_style(active))
+    .padding([2, 4])
+    .on_press(Message::DashboardPeerSortPressed(field))
+}
+
+fn sorted_peers<'a>(state: &State, peers: &'a [PeerSummary]) -> Vec<&'a PeerSummary> {
+    let mut sorted: Vec<&PeerSummary> = peers.iter().collect();
+    sorted.sort_by(|a, b| match state.dashboard_peer_sort {
+        PeerSortField::Id => a.id.cmp(&b.id),
+        PeerSortField::Address => a.addr.cmp(&b.addr),
+        PeerSortField::Direction => a.inbound.cmp(&b.inbound),
+        PeerSortField::ConnectionType => a.connection_type.cmp(&b.connection_type),
+        PeerSortField::Ping => {
+            let ap = a.ping_time.unwrap_or(f64::INFINITY);
+            let bp = b.ping_time.unwrap_or(f64::INFINITY);
+            ap.partial_cmp(&bp).unwrap_or(std::cmp::Ordering::Equal)
+        }
+    });
+    if state.dashboard_peer_sort_desc {
+        sorted.reverse();
+    }
+    sorted
 }

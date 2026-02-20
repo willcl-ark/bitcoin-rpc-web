@@ -21,6 +21,22 @@ pub enum DashboardPartialSet {
     ChainAndMempool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PeerSortField {
+    Id,
+    Address,
+    Direction,
+    ConnectionType,
+    Ping,
+}
+
+#[derive(Debug, Clone)]
+pub struct ZmqUiEvent {
+    pub topic: String,
+    pub event_hash: String,
+    pub timestamp: u64,
+}
+
 #[derive(Debug, Clone)]
 pub struct ConfigForm {
     pub url: String,
@@ -74,6 +90,8 @@ pub struct State {
     pub dashboard_in_flight: bool,
     pub dashboard_error: Option<String>,
     pub dashboard_selected_peer_id: Option<i64>,
+    pub dashboard_peer_sort: PeerSortField,
+    pub dashboard_peer_sort_desc: bool,
     pub dashboard_pending_partial: Option<DashboardPartialSet>,
     pub dashboard_last_refresh_at: Option<Instant>,
     pub zmq_connected: bool,
@@ -82,6 +100,7 @@ pub struct State {
     pub zmq_events_seen: u64,
     pub zmq_last_topic: Option<String>,
     pub zmq_last_event_at: Option<u64>,
+    pub zmq_recent_events: Vec<ZmqUiEvent>,
 }
 
 impl State {
@@ -147,6 +166,8 @@ impl State {
             dashboard_in_flight: false,
             dashboard_error: None,
             dashboard_selected_peer_id: None,
+            dashboard_peer_sort: PeerSortField::Id,
+            dashboard_peer_sort_desc: false,
             dashboard_pending_partial: None,
             dashboard_last_refresh_at: None,
             zmq_connected: false,
@@ -155,6 +176,7 @@ impl State {
             zmq_events_seen: 0,
             zmq_last_topic: None,
             zmq_last_event_at: None,
+            zmq_recent_events: Vec::new(),
         };
 
         let startup_zmq = state.runtime_config.zmq_address.trim().to_string();

@@ -3,7 +3,7 @@ use serde_json::Value;
 use std::time::{Duration, Instant};
 
 use crate::app::message::Message;
-use crate::app::state::{ConfigForm, DashboardPartialSet, State};
+use crate::app::state::{ConfigForm, DashboardPartialSet, State, ZmqUiEvent};
 use crate::core::config_store::ConfigStore;
 use crate::core::dashboard_service::{DashboardPartialUpdate, DashboardService, DashboardSnapshot};
 use crate::core::rpc_client::{
@@ -258,6 +258,14 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
         Message::DashboardPeerSelected(peer_id) => {
             state.dashboard_selected_peer_id = Some(peer_id);
         }
+        Message::DashboardPeerSortPressed(field) => {
+            if state.dashboard_peer_sort == field {
+                state.dashboard_peer_sort_desc = !state.dashboard_peer_sort_desc;
+            } else {
+                state.dashboard_peer_sort = field;
+                state.dashboard_peer_sort_desc = false;
+            }
+        }
         Message::DashboardPartialRefreshRequested(partial) => {
             if state.dashboard_in_flight {
                 return Task::none();
@@ -358,6 +366,7 @@ fn poll_zmq_feed(state: &mut State) {
         let zmq_state = state.zmq_state.state.lock().expect("zmq state lock");
         state.zmq_connected = zmq_state.connected;
         state.zmq_connected_address = zmq_state.address.clone();
+        state.zmq_events_seen = zmq_state.next_cursor.saturating_sub(1);
 
         for message in zmq_state.messages.iter() {
             if message.cursor <= state.zmq_last_cursor {
@@ -365,7 +374,6 @@ fn poll_zmq_feed(state: &mut State) {
             }
 
             next_cursor = next_cursor.max(message.cursor);
-            state.zmq_events_seen = state.zmq_events_seen.saturating_add(1);
             state.zmq_last_topic = Some(message.topic.clone());
             state.zmq_last_event_at = Some(message.timestamp);
 
@@ -375,6 +383,21 @@ fn poll_zmq_feed(state: &mut State) {
                 _ => {}
             }
         }
+
+        state.zmq_recent_events = zmq_state
+            .messages
+            .iter()
+            .rev()
+            .take(80)
+            .map(|m| ZmqUiEvent {
+                topic: m.topic.clone(),
+                event_hash: m.event_hash.clone().unwrap_or_else(|| m.body_hex.clone()),
+                timestamp: m.timestamp,
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
     }
 
     state.zmq_last_cursor = next_cursor;
@@ -523,6 +546,7 @@ fn apply_zmq_runtime(state: &mut State, previous_address: &str) {
         state.zmq_last_cursor = 0;
         state.zmq_last_topic = None;
         state.zmq_last_event_at = None;
+        state.zmq_recent_events.clear();
         state.dashboard_pending_partial = None;
         return;
     }
