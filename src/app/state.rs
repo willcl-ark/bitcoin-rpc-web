@@ -26,6 +26,7 @@ pub enum DashboardPartialSet {
 pub enum PeerSortField {
     Id,
     Address,
+    Subversion,
     Direction,
     ConnectionType,
     Ping,

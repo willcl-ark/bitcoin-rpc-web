@@ -160,7 +160,14 @@ pub fn view(state: &State) -> Element<'_, Message> {
             container(
                 column![
                     text("LIVE EVENTS").size(14).color(components::ACCENT),
-                    scrollable(live_rows).height(160)
+                    scrollable(live_rows)
+                        .height(160)
+                        .direction(scrollable::Direction::Vertical(
+                            scrollable::Scrollbar::new()
+                                .width(6)
+                                .scroller_width(6)
+                                .spacing(2),
+                        ))
                 ]
                 .spacing(4)
             )
@@ -201,9 +208,7 @@ fn peer_table(state: &State) -> Element<'_, Message> {
     let header = row![
         sort_header(state, "ID", PeerSortField::Id).width(iced::Length::FillPortion(1)),
         sort_header(state, "Address", PeerSortField::Address).width(iced::Length::FillPortion(3)),
-        text("Subver")
-            .color(components::MUTED)
-            .width(iced::Length::FillPortion(3)),
+        sort_header(state, "Subver", PeerSortField::Subversion).width(iced::Length::FillPortion(3)),
         sort_header(state, "Dir", PeerSortField::Direction).width(iced::Length::FillPortion(1)),
         sort_header(state, "Type", PeerSortField::ConnectionType)
             .width(iced::Length::FillPortion(2)),
@@ -214,6 +219,7 @@ fn peer_table(state: &State) -> Element<'_, Message> {
     let mut rows = column![text("PEERS").size(15).color(components::ACCENT), header].spacing(2);
 
     if let Some(snapshot) = &state.dashboard_snapshot {
+        let subver_scale = subversion_major_scale(&snapshot.peers);
         for peer in sorted_peers(state, &snapshot.peers) {
             let selected = state.dashboard_selected_peer_id == Some(peer.id);
             let ping = peer
@@ -222,11 +228,14 @@ fn peer_table(state: &State) -> Element<'_, Message> {
                 .unwrap_or_else(|| "-".to_string());
             let ping_color = ping_color(peer.ping_time);
             let connection_type_color = connection_type_color(&peer.connection_type);
+            let subver_color = subversion_color(&peer.subver, &subver_scale);
 
             let row_line = row![
                 text(peer.id.to_string()).width(iced::Length::FillPortion(1)),
                 text(peer.addr.clone()).width(iced::Length::FillPortion(3)),
-                text(peer.subver.clone()).width(iced::Length::FillPortion(3)),
+                text(peer.subver.clone())
+                    .color(subver_color)
+                    .width(iced::Length::FillPortion(3)),
                 text(if peer.inbound { "IN" } else { "OUT" })
                     .color(if peer.inbound {
                         components::AMBER
@@ -349,6 +358,7 @@ fn sorted_peers<'a>(state: &State, peers: &'a [PeerSummary]) -> Vec<&'a PeerSumm
     sorted.sort_by(|a, b| match state.dashboard_peer_sort {
         PeerSortField::Id => a.id.cmp(&b.id),
         PeerSortField::Address => a.addr.cmp(&b.addr),
+        PeerSortField::Subversion => a.subver.cmp(&b.subver),
         PeerSortField::Direction => a.inbound.cmp(&b.inbound),
         PeerSortField::ConnectionType => a.connection_type.cmp(&b.connection_type),
         PeerSortField::Ping => {
@@ -505,6 +515,51 @@ fn connection_type_color(kind: &str) -> Color {
         "addr-fetch" => Color::from_rgb(0.96, 0.70, 0.20),
         "private-broadcast" => Color::from_rgb(0.97, 0.54, 0.26),
         _ => components::TEXT,
+    }
+}
+
+fn subversion_major_scale(peers: &[PeerSummary]) -> Vec<i64> {
+    let mut versions = peers
+        .iter()
+        .filter_map(|peer| extract_subversion_major(&peer.subver))
+        .collect::<Vec<_>>();
+    versions.sort_unstable();
+    versions.dedup();
+    versions
+}
+
+fn extract_subversion_major(subver: &str) -> Option<i64> {
+    let (_, after_colon) = subver.split_once(':')?;
+    let major = after_colon
+        .trim_start_matches('/')
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .trim_matches('/');
+    major.parse::<i64>().ok()
+}
+
+fn subversion_color(subver: &str, scale: &[i64]) -> Color {
+    let Some(major) = extract_subversion_major(subver) else {
+        return components::TEXT;
+    };
+    let Some(idx) = scale.iter().position(|v| *v == major) else {
+        return components::TEXT;
+    };
+
+    if scale.len() <= 1 {
+        return components::ACCENT_ALT;
+    }
+
+    let red = components::ERROR_RED;
+    let orange = components::AMBER;
+    let green = Color::from_rgb(0.20, 0.84, 0.46);
+    let t = idx as f32 / (scale.len() - 1) as f32;
+
+    if t <= 0.5 {
+        lerp_color(red, orange, t * 2.0)
+    } else {
+        lerp_color(orange, green, (t - 0.5) * 2.0)
     }
 }
 
