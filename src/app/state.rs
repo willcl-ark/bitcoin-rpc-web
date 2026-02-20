@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::core::config_store::ConfigStore;
 use crate::core::rpc_client::{MAX_ZMQ_BUFFER_LIMIT, MIN_ZMQ_BUFFER_LIMIT, RpcClient, RpcConfig};
+use crate::core::schema::SchemaIndex;
 use crate::zmq::{ZmqHandle, ZmqSharedState, start_zmq_subscriber, stop_zmq_subscriber};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -51,6 +52,16 @@ pub struct State {
     pub save_in_flight: bool,
     pub config_status: Option<String>,
     pub config_error: Option<String>,
+    pub schema_index: Option<SchemaIndex>,
+    pub schema_error: Option<String>,
+    pub rpc_search: String,
+    pub rpc_selected_method: Option<String>,
+    pub rpc_params_input: String,
+    pub rpc_batch_mode: bool,
+    pub rpc_batch_input: String,
+    pub rpc_execute_in_flight: bool,
+    pub rpc_response: Option<String>,
+    pub rpc_error: Option<String>,
 }
 
 impl State {
@@ -83,6 +94,11 @@ impl State {
             .zmq_buffer_limit
             .clamp(MIN_ZMQ_BUFFER_LIMIT, MAX_ZMQ_BUFFER_LIMIT);
 
+        let (schema_index, schema_error) = match SchemaIndex::load_default() {
+            Ok(index) => (Some(index), None),
+            Err(error) => (None, Some(error)),
+        };
+
         let mut state = Self {
             active_tab: Tab::default(),
             config_store,
@@ -97,6 +113,16 @@ impl State {
             save_in_flight: false,
             config_status: None,
             config_error: None,
+            schema_index,
+            schema_error,
+            rpc_search: String::new(),
+            rpc_selected_method: Some("getblockchaininfo".to_string()),
+            rpc_params_input: "[]".to_string(),
+            rpc_batch_mode: false,
+            rpc_batch_input: "[]".to_string(),
+            rpc_execute_in_flight: false,
+            rpc_response: None,
+            rpc_error: None,
         };
 
         let startup_zmq = state.runtime_config.zmq_address.trim().to_string();

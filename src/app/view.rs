@@ -16,7 +16,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
 
     let content = match state.active_tab {
         Tab::Dashboard => crate::ui::dashboard::view(),
-        Tab::Rpc => crate::ui::rpc::view(),
+        Tab::Rpc => crate::ui::rpc::view(state),
         Tab::Config => crate::ui::config::view(state),
     };
 

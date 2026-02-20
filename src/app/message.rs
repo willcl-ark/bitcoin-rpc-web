@@ -17,4 +17,11 @@ pub enum Message {
     ConfigReloadFinished(Result<RpcConfig, String>),
     ConfigSavePressed,
     ConfigSaveFinished(Result<RpcConfig, String>),
+    RpcSearchChanged(String),
+    RpcMethodSelected(String),
+    RpcParamsChanged(String),
+    RpcBatchModeToggled(bool),
+    RpcBatchChanged(String),
+    RpcExecutePressed,
+    RpcExecuteFinished(Result<String, String>),
 }

@@ -1,4 +1,5 @@
 use iced::Task;
+use serde_json::Value;
 
 use crate::app::message::Message;
 use crate::app::state::{ConfigForm, State};
@@ -158,6 +159,70 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
                 }
             }
         }
+        Message::RpcSearchChanged(value) => {
+            state.rpc_search = value;
+        }
+        Message::RpcMethodSelected(method) => {
+            state.rpc_selected_method = Some(method);
+            state.rpc_error = None;
+        }
+        Message::RpcParamsChanged(value) => {
+            state.rpc_params_input = value;
+            state.rpc_error = None;
+        }
+        Message::RpcBatchModeToggled(enabled) => {
+            state.rpc_batch_mode = enabled;
+            state.rpc_error = None;
+        }
+        Message::RpcBatchChanged(value) => {
+            state.rpc_batch_input = value;
+            state.rpc_error = None;
+        }
+        Message::RpcExecutePressed => {
+            if state.rpc_execute_in_flight {
+                return Task::none();
+            }
+
+            state.rpc_execute_in_flight = true;
+            state.rpc_error = None;
+            state.rpc_response = None;
+            let client = state.rpc_client.clone();
+
+            if state.rpc_batch_mode {
+                let batch_text = state.rpc_batch_input.clone();
+                return Task::perform(
+                    run_batch_rpc(client, batch_text),
+                    Message::RpcExecuteFinished,
+                );
+            }
+
+            let method = match &state.rpc_selected_method {
+                Some(method) => method.clone(),
+                None => {
+                    state.rpc_execute_in_flight = false;
+                    state.rpc_error = Some("Select an RPC method first".to_string());
+                    return Task::none();
+                }
+            };
+            let params_text = state.rpc_params_input.clone();
+            return Task::perform(
+                run_single_rpc(client, method, params_text),
+                Message::RpcExecuteFinished,
+            );
+        }
+        Message::RpcExecuteFinished(result) => {
+            state.rpc_execute_in_flight = false;
+            match result {
+                Ok(response) => {
+                    state.rpc_response = Some(response);
+                    state.rpc_error = None;
+                }
+                Err(error) => {
+                    state.rpc_response = None;
+                    state.rpc_error = Some(error);
+                }
+            }
+        }
     }
 
     Task::none()
@@ -205,6 +270,27 @@ async fn test_rpc_config(config: RpcConfig) -> Result<RpcConfig, String> {
         .call("getblockchaininfo", serde_json::json!([]))
         .map_err(|error| error.to_string())?;
     Ok(config)
+}
+
+async fn run_single_rpc(
+    client: RpcClient,
+    method: String,
+    params_text: String,
+) -> Result<String, String> {
+    let params: Value =
+        serde_json::from_str(&params_text).map_err(|e| format!("invalid params json: {e}"))?;
+    let response = client.call(&method, params).map_err(|e| e.to_string())?;
+    serde_json::to_string_pretty(&response).map_err(|e| format!("failed to format response: {e}"))
+}
+
+async fn run_batch_rpc(client: RpcClient, batch_text: String) -> Result<String, String> {
+    let payload: Value =
+        serde_json::from_str(&batch_text).map_err(|e| format!("invalid batch json: {e}"))?;
+    if !payload.is_array() {
+        return Err("batch mode expects a JSON array".to_string());
+    }
+    let response = client.post_json(&payload).map_err(|e| e.to_string())?;
+    serde_json::to_string_pretty(&response).map_err(|e| format!("failed to format response: {e}"))
 }
 
 async fn load_config(store: ConfigStore) -> Result<RpcConfig, String> {
