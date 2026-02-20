@@ -28,6 +28,7 @@ pub enum Message {
     DashboardTick,
     DashboardLoaded(Result<DashboardSnapshot, String>),
     DashboardPeerSelected(i64),
+    DashboardPeerDetailClosed,
     DashboardPeerSortPressed(PeerSortField),
     DashboardPartialRefreshRequested(DashboardPartialSet),
     DashboardPartialLoaded(Result<DashboardPartialUpdate, String>),

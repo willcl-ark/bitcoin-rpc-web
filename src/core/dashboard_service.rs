@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde_json::Value;
 
 use crate::core::rpc_client::{RpcCall, RpcClient, RpcError};
@@ -9,6 +11,7 @@ pub struct DashboardSnapshot {
     pub network: NetworkSummary,
     pub traffic: TrafficSummary,
     pub peers: Vec<PeerSummary>,
+    pub peer_details: BTreeMap<i64, Value>,
     pub uptime_secs: u64,
 }
 
@@ -171,27 +174,34 @@ impl DashboardService {
             total_bytes_sent: u64_field(traffic, "totalbytessent")?,
         };
 
-        let peers = peers
-            .iter()
-            .filter_map(|peer| {
-                let peer = peer.as_object()?;
-                Some(PeerSummary {
-                    id: i64_field(peer, "id").ok()?,
-                    addr: string(peer, "addr").ok()?,
-                    inbound: bool_field(peer, "inbound").ok()?,
-                    connection_type: string(peer, "connection_type")
-                        .unwrap_or_else(|_| "unknown".to_string()),
-                    ping_time: peer.get("pingtime").and_then(Value::as_f64),
-                })
-            })
-            .collect();
+        let mut peer_summaries = Vec::new();
+        let mut peer_details = BTreeMap::new();
+        for peer in peers {
+            let Some(peer_object) = peer.as_object() else {
+                continue;
+            };
+            let Some(id) = i64_field(peer_object, "id").ok() else {
+                continue;
+            };
+
+            peer_summaries.push(PeerSummary {
+                id,
+                addr: string(peer_object, "addr").unwrap_or_else(|_| "?".to_string()),
+                inbound: bool_field(peer_object, "inbound").unwrap_or(false),
+                connection_type: string(peer_object, "connection_type")
+                    .unwrap_or_else(|_| "unknown".to_string()),
+                ping_time: peer_object.get("pingtime").and_then(Value::as_f64),
+            });
+            peer_details.insert(id, peer.clone());
+        }
 
         Ok(DashboardSnapshot {
             chain,
             mempool,
             network,
             traffic,
-            peers,
+            peers: peer_summaries,
+            peer_details,
             uptime_secs,
         })
     }
@@ -314,6 +324,7 @@ mod tests {
         assert_eq!(snapshot.uptime_secs, 123);
         assert_eq!(snapshot.peers.len(), 1);
         assert_eq!(snapshot.peers[0].connection_type, "manual");
+        assert!(snapshot.peer_details.contains_key(&1));
     }
 
     #[test]

@@ -244,7 +244,7 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
                         .dashboard_selected_peer_id
                         .is_some_and(|id| snapshot.peers.iter().any(|peer| peer.id == id));
                     if !selected_is_valid {
-                        state.dashboard_selected_peer_id = snapshot.peers.first().map(|p| p.id);
+                        state.dashboard_selected_peer_id = None;
                     }
                     state.dashboard_snapshot = Some(snapshot);
                     state.dashboard_error = None;
@@ -257,6 +257,9 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
         }
         Message::DashboardPeerSelected(peer_id) => {
             state.dashboard_selected_peer_id = Some(peer_id);
+        }
+        Message::DashboardPeerDetailClosed => {
+            state.dashboard_selected_peer_id = None;
         }
         Message::DashboardPeerSortPressed(field) => {
             if state.dashboard_peer_sort == field {

@@ -75,20 +75,11 @@ pub fn view(state: &State) -> Element<'_, Message> {
             .into()
     };
 
-    let main_body = row![
-        container(peer_table(state))
-            .style(components::panel_style())
-            .padding(12)
-            .width(iced::Length::FillPortion(3))
-            .height(Fill),
-        container(peer_detail(state))
-            .style(components::panel_style())
-            .padding(12)
-            .width(iced::Length::FillPortion(2))
-            .height(Fill),
-    ]
-    .spacing(12)
-    .height(Fill);
+    let main_body = container(peer_table(state))
+        .style(components::panel_style())
+        .padding(12)
+        .width(Fill)
+        .height(Fill);
 
     let zmq_summary = summary_card(
         "ZMQ Feed",
@@ -231,40 +222,33 @@ fn peer_table(state: &State) -> Element<'_, Message> {
         rows = rows.push(text("No peer data").color(components::MUTED));
     }
 
-    scrollable(rows).into()
-}
-
-fn peer_detail(state: &State) -> Element<'_, Message> {
-    let mut detail = column![text("Peer Detail").size(24).color(components::TEXT)].spacing(10);
-    if let Some(snapshot) = &state.dashboard_snapshot {
-        let selected = state
-            .dashboard_selected_peer_id
-            .and_then(|id| snapshot.peers.iter().find(|peer| peer.id == id));
-
-        if let Some(peer) = selected {
-            detail = detail.push(summary_card(
-                "Selected Peer",
-                vec![
-                    ("id", peer.id.to_string()),
-                    ("addr", peer.addr.clone()),
-                    ("inbound", peer.inbound.to_string()),
-                    ("type", peer.connection_type.clone()),
-                    (
-                        "ping",
-                        peer.ping_time
-                            .map(|v| format!("{v:.6}s"))
-                            .unwrap_or_else(|| "-".to_string()),
-                    ),
-                ],
-            ));
-        } else {
-            detail = detail.push(text("Select a peer from the table.").color(components::MUTED));
-        }
-    } else {
-        detail = detail.push(text("No peer data").color(components::MUTED));
+    if let Some(snapshot) = &state.dashboard_snapshot
+        && let Some(selected_id) = state.dashboard_selected_peer_id
+        && let Some(raw) = snapshot.peer_details.get(&selected_id)
+    {
+        let rendered = serde_json::to_string_pretty(raw)
+            .unwrap_or_else(|_| "{\"error\":\"failed to format peer\"}".to_string());
+        rows = rows.push(
+            container(
+                column![
+                    row![
+                        text(format!("Peer Detail (id {selected_id})"))
+                            .size(18)
+                            .color(components::TEXT),
+                        button(text("Close").color(components::MUTED))
+                            .style(components::nav_button_style(false))
+                            .on_press(Message::DashboardPeerDetailClosed),
+                    ]
+                    .spacing(8),
+                    scrollable(text(rendered).size(13).color(components::MUTED)).height(180),
+                ]
+                .spacing(8),
+            )
+            .style(components::card_style())
+            .padding(10),
+        );
     }
-
-    scrollable(detail).into()
+    scrollable(rows).into()
 }
 
 fn summary_card<'a>(
