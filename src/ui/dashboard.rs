@@ -331,10 +331,10 @@ fn peer_table(state: &State) -> Element<'_, Message> {
                     components::ACCENT_ALT
                 };
                 let hb = match (peer.is_bip152_hb_to, peer.is_bip152_hb_from) {
-                    (true, true) => "tf",
-                    (true, false) => "t.",
-                    (false, true) => ".f",
-                    (false, false) => "..",
+                    (true, true) => ".*",
+                    (true, false) => ". ",
+                    (false, true) => " *",
+                    (false, false) => "  ",
                 };
                 let txn = if !peer.is_tx_relay {
                     "*".to_string()

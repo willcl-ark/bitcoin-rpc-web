@@ -216,8 +216,10 @@ impl DashboardService {
 
             let transport_version = peer_object
                 .get("transport_protocol_type")
-                .and_then(Value::as_u64)
-                .unwrap_or(1) as u8;
+                .and_then(Value::as_str)
+                .and_then(|s| s.strip_prefix('v'))
+                .and_then(|s| s.parse::<u8>().ok())
+                .unwrap_or(1);
 
             peer_summaries.push(PeerSummary {
                 id,
@@ -395,7 +397,7 @@ mod tests {
                     "subver": "/Satoshi:28.0.0/",
                     "network": "ipv4",
                     "servicesnames": ["NETWORK", "WITNESS", "NETWORK_LIMITED", "P2P_V2"],
-                    "transport_protocol_type": 2,
+                    "transport_protocol_type": "v2",
                     "inbound": true,
                     "connection_type": "manual",
                     "minping": 0.0005,
