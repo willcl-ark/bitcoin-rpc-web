@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use iced::widget::{button, column, container, row, scrollable, text};
 use iced::{Color, Element, Fill};
+use iced::{alignment, widget::text::Wrapping};
 use serde_json::Value;
 
 use crate::app::message::Message;
@@ -113,14 +114,17 @@ pub fn view(state: &State) -> Element<'_, Message> {
     let mut live_rows = column![
         row![
             text("TOPIC")
-                .width(iced::Length::FillPortion(1))
+                .width(iced::Length::Fixed(110.0))
                 .color(components::MUTED),
             text("EVENT")
-                .width(iced::Length::FillPortion(4))
-                .color(components::MUTED),
+                .width(Fill)
+                .color(components::MUTED)
+                .wrapping(Wrapping::None),
             text("TIME")
-                .width(iced::Length::FillPortion(2))
-                .color(components::MUTED),
+                .width(iced::Length::Fixed(95.0))
+                .align_x(alignment::Horizontal::Right)
+                .color(components::MUTED)
+                .wrapping(Wrapping::None),
         ]
         .spacing(4)
     ]
@@ -134,9 +138,13 @@ pub fn view(state: &State) -> Element<'_, Message> {
                 row![
                     text(&evt.topic)
                         .color(components::ACCENT)
-                        .width(iced::Length::FillPortion(1)),
-                    text(&evt.event_hash).width(iced::Length::FillPortion(4)),
-                    text(format_event_time(evt.timestamp)).width(iced::Length::FillPortion(2)),
+                        .width(iced::Length::Fixed(110.0))
+                        .wrapping(Wrapping::None),
+                    text(&evt.event_hash).width(Fill).wrapping(Wrapping::None),
+                    text(format_event_time(evt.timestamp))
+                        .width(iced::Length::Fixed(95.0))
+                        .align_x(alignment::Horizontal::Right)
+                        .wrapping(Wrapping::None),
                 ]
                 .spacing(4),
             );
