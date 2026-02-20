@@ -8,8 +8,7 @@ default = ["audio"]
 audio = ["dep:rodio", "dep:xmrs", "dep:xmrsplayer"]
 
 [dependencies]
-wry = "0.53"
-winit = "0.30"
+iced = { version = "0.13", features = ["wgpu", "tokio"] }
 ureq = { version = "3", features = ["json"] }
 serde_json = "1"
 tracing = "0.1"
@@ -19,6 +18,3 @@ xmrsplayer = { version = "0.9", optional = true }
 rodio = { version = "0.20", default-features = false, optional = true }
 zmq2 = "0.5"
 sha2 = "0.10"
-
-[target.'cfg(target_os = "linux")'.dependencies]
-gtk = "0.18"
