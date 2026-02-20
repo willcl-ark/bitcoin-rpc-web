@@ -601,10 +601,11 @@ fn can_run_debounced_refresh(state: &State) -> bool {
         .is_none_or(|t| t.elapsed() >= Duration::from_millis(ZMQ_REFRESH_DEBOUNCE_MS))
 }
 
+const ZMQ_RECENT_EVENTS_CAP: usize = 80;
+
 fn poll_zmq_feed(state: &mut State) {
     let mut saw_hashblock = false;
     let mut saw_hashtx = false;
-    let mut next_cursor = state.zmq.last_cursor;
 
     {
         let zmq_state = state.zmq_state.state.lock().expect("zmq state lock");
@@ -617,9 +618,18 @@ fn poll_zmq_feed(state: &mut State) {
                 continue;
             }
 
-            next_cursor = next_cursor.max(message.cursor);
+            state.zmq.last_cursor = message.cursor;
             state.zmq.last_topic = Some(message.topic.clone());
             state.zmq.last_event_at = Some(message.timestamp);
+
+            state.zmq.recent_events.push(ZmqUiEvent {
+                topic: message.topic.clone(),
+                event_hash: message
+                    .event_hash
+                    .clone()
+                    .unwrap_or_else(|| message.body_hex.clone()),
+                timestamp: message.timestamp,
+            });
 
             match message.topic.as_str() {
                 "hashblock" => saw_hashblock = true,
@@ -627,24 +637,16 @@ fn poll_zmq_feed(state: &mut State) {
                 _ => {}
             }
         }
-
-        state.zmq.recent_events = zmq_state
-            .messages
-            .iter()
-            .rev()
-            .take(80)
-            .map(|m| ZmqUiEvent {
-                topic: m.topic.clone(),
-                event_hash: m.event_hash.clone().unwrap_or_else(|| m.body_hex.clone()),
-                timestamp: m.timestamp,
-            })
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect();
     }
 
-    state.zmq.last_cursor = next_cursor;
+    let overflow = state
+        .zmq
+        .recent_events
+        .len()
+        .saturating_sub(ZMQ_RECENT_EVENTS_CAP);
+    if overflow > 0 {
+        state.zmq.recent_events.drain(..overflow);
+    }
 
     if saw_hashblock {
         merge_pending_partial(state, DashboardPartialSet::ChainAndMempool);
