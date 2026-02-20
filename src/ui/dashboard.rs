@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use iced::widget::{button, column, container, row, scrollable, text};
-use iced::{Element, Fill};
+use iced::{Color, Element, Fill};
+use serde_json::Value;
 
 use crate::app::message::Message;
 use crate::app::state::{PeerSortField, State};
@@ -211,6 +212,8 @@ fn peer_table(state: &State) -> Element<'_, Message> {
                 .ping_time
                 .map(|v| format!("{v:.3}s"))
                 .unwrap_or_else(|| "-".to_string());
+            let ping_color = ping_color(peer.ping_time);
+            let connection_type_color = connection_type_color(&peer.connection_type);
 
             let row_line = row![
                 text(peer.id.to_string()).width(iced::Length::FillPortion(1)),
@@ -223,8 +226,12 @@ fn peer_table(state: &State) -> Element<'_, Message> {
                         components::ACCENT_ALT
                     })
                     .width(iced::Length::FillPortion(1)),
-                text(peer.connection_type.clone()).width(iced::Length::FillPortion(2)),
-                text(ping).width(iced::Length::FillPortion(1)),
+                text(peer.connection_type.clone())
+                    .color(connection_type_color)
+                    .width(iced::Length::FillPortion(2)),
+                text(ping)
+                    .color(ping_color)
+                    .width(iced::Length::FillPortion(1)),
             ]
             .spacing(4);
 
@@ -244,8 +251,6 @@ fn peer_table(state: &State) -> Element<'_, Message> {
         && let Some(selected_id) = state.dashboard_selected_peer_id
         && let Some(raw) = snapshot.peer_details.get(&selected_id)
     {
-        let rendered = serde_json::to_string_pretty(raw)
-            .unwrap_or_else(|_| "{\"error\":\"failed to format peer\"}".to_string());
         Some(
             container(
                 column![
@@ -258,7 +263,7 @@ fn peer_table(state: &State) -> Element<'_, Message> {
                             .on_press(Message::DashboardPeerDetailClosed),
                     ]
                     .spacing(8),
-                    scrollable(text(rendered).size(12).color(components::TEXT)).height(170),
+                    scrollable(peer_detail_grid(raw)).height(170),
                 ]
                 .spacing(6),
             )
@@ -352,6 +357,172 @@ fn sorted_peers<'a>(state: &State, peers: &'a [PeerSummary]) -> Vec<&'a PeerSumm
 
 fn format_event_time(timestamp: u64) -> String {
     DateTime::from_timestamp(timestamp as i64, 0)
-        .map(|dt: DateTime<Utc>| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+        .map(|dt: DateTime<Utc>| dt.format("%H:%M:%S").to_string())
         .unwrap_or_else(|| timestamp.to_string())
+}
+
+fn peer_detail_grid<'a>(raw: &'a Value) -> Element<'a, Message> {
+    let items = peer_detail_items(raw);
+    if items.is_empty() {
+        return text("No peer detail available.")
+            .color(components::MUTED)
+            .into();
+    }
+
+    let mut grid = column![].spacing(4);
+    for chunk in items.chunks(3) {
+        let mut line = row![].spacing(10);
+        for (key, value) in chunk {
+            line = line.push(
+                container(
+                    column![
+                        text(key.to_uppercase()).size(11).color(components::MUTED),
+                        text(value.clone()).size(12).color(components::TEXT)
+                    ]
+                    .spacing(1),
+                )
+                .width(iced::Length::FillPortion(1))
+                .padding([2, 4]),
+            );
+        }
+        for _ in chunk.len()..3 {
+            line = line.push(container(text("")).width(iced::Length::FillPortion(1)));
+        }
+        grid = grid.push(line);
+    }
+
+    grid.into()
+}
+
+fn peer_detail_items(raw: &Value) -> Vec<(String, String)> {
+    let Some(obj) = raw.as_object() else {
+        return Vec::new();
+    };
+
+    let priority_keys = [
+        "id",
+        "addr",
+        "subver",
+        "network",
+        "connection_type",
+        "inbound",
+        "version",
+        "servicesnames",
+        "permissions",
+        "pingtime",
+        "minping",
+        "lastsend",
+        "lastrecv",
+        "bytessent",
+        "bytesrecv",
+        "mapped_as",
+        "synced_headers",
+        "synced_blocks",
+        "startingheight",
+        "timeoffset",
+        "relaytxes",
+        "presynced_headers",
+        "addrbind",
+        "addrlocal",
+    ];
+
+    let mut out = Vec::new();
+    for key in priority_keys {
+        if let Some(value) = obj.get(key) {
+            out.push((key.to_string(), compact_value(value)));
+        }
+    }
+
+    for (key, value) in obj {
+        if priority_keys.contains(&key.as_str()) {
+            continue;
+        }
+        out.push((key.clone(), compact_value(value)));
+    }
+
+    out
+}
+
+fn compact_value(value: &Value) -> String {
+    match value {
+        Value::Null => "-".to_string(),
+        Value::Bool(v) => {
+            if *v {
+                "true".to_string()
+            } else {
+                "false".to_string()
+            }
+        }
+        Value::Number(n) => n.to_string(),
+        Value::String(s) => s.clone(),
+        Value::Array(values) => {
+            if values.is_empty() {
+                "[]".to_string()
+            } else if values.len() <= 4 {
+                values
+                    .iter()
+                    .map(compact_value)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            } else {
+                format!("[{} items]", values.len())
+            }
+        }
+        Value::Object(map) => {
+            if map.is_empty() {
+                "{}".to_string()
+            } else {
+                let mut sample = map
+                    .iter()
+                    .take(3)
+                    .map(|(k, v)| format!("{k}:{}", compact_value(v)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                if map.len() > 3 {
+                    sample.push_str(&format!(" … ({} keys)", map.len()));
+                }
+                sample
+            }
+        }
+    }
+}
+
+fn connection_type_color(kind: &str) -> Color {
+    match kind.to_ascii_lowercase().as_str() {
+        "inbound" => Color::from_rgb(0.30, 0.84, 1.0),
+        "manual" => Color::from_rgb(0.96, 0.79, 0.27),
+        "feeler" => Color::from_rgb(0.63, 0.83, 1.0),
+        "outbound-full-relay" => Color::from_rgb(0.20, 0.84, 0.46),
+        "block-relay-only" => Color::from_rgb(0.45, 0.76, 0.98),
+        "addr-fetch" => Color::from_rgb(0.96, 0.70, 0.20),
+        "private-broadcast" => Color::from_rgb(0.97, 0.54, 0.26),
+        _ => components::TEXT,
+    }
+}
+
+fn ping_color(ping_secs: Option<f64>) -> Color {
+    let Some(ping) = ping_secs else {
+        return components::MUTED;
+    };
+
+    let green = Color::from_rgb(0.20, 0.84, 0.46);
+    let orange = components::AMBER;
+    let red = components::ERROR_RED;
+
+    if ping <= 2.0 {
+        lerp_color(green, orange, (ping / 2.0) as f32)
+    } else if ping < 5.0 {
+        lerp_color(orange, red, ((ping - 2.0) / 3.0) as f32)
+    } else {
+        red
+    }
+}
+
+fn lerp_color(a: Color, b: Color, t: f32) -> Color {
+    let k = t.clamp(0.0, 1.0);
+    Color::from_rgb(
+        a.r + (b.r - a.r) * k,
+        a.g + (b.g - a.g) * k,
+        a.b + (b.b - a.b) * k,
+    )
 }
