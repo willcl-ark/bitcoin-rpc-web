@@ -431,7 +431,11 @@ fn handle_dashboard(state: &mut State, message: Message) -> Task<Message> {
             }
             return start_dashboard_refresh(state);
         }
-        Message::DashboardLoaded(result) => {
+        Message::DashboardLoaded(rgen, result) => {
+            if rgen != state.dashboard.request_gen {
+                state.dashboard.in_flight = false;
+                return Task::none();
+            }
             state.dashboard.in_flight = false;
             match result {
                 Ok(snapshot) => {
@@ -477,7 +481,11 @@ fn handle_dashboard(state: &mut State, message: Message) -> Task<Message> {
             }
             return start_partial_dashboard_refresh(state, partial);
         }
-        Message::DashboardPartialLoaded(result) => {
+        Message::DashboardPartialLoaded(rgen, result) => {
+            if rgen != state.dashboard.request_gen {
+                state.dashboard.in_flight = false;
+                return Task::none();
+            }
             state.dashboard.in_flight = false;
             match result {
                 Ok(partial) => {
@@ -567,7 +575,10 @@ fn start_dashboard_refresh(state: &mut State) -> Task<Message> {
     state.dashboard.in_flight = true;
     state.dashboard.last_refresh_at = Some(Instant::now());
     let client = state.rpc.client.clone();
-    Task::perform(load_dashboard(client), Message::DashboardLoaded)
+    let rgen = state.dashboard.request_gen;
+    Task::perform(load_dashboard(client), move |r| {
+        Message::DashboardLoaded(rgen, r)
+    })
 }
 
 fn start_partial_dashboard_refresh(
@@ -577,10 +588,10 @@ fn start_partial_dashboard_refresh(
     state.dashboard.in_flight = true;
     state.dashboard.last_refresh_at = Some(Instant::now());
     let client = state.rpc.client.clone();
-    Task::perform(
-        load_dashboard_partial(client, partial),
-        Message::DashboardPartialLoaded,
-    )
+    let rgen = state.dashboard.request_gen;
+    Task::perform(load_dashboard_partial(client, partial), move |r| {
+        Message::DashboardPartialLoaded(rgen, r)
+    })
 }
 
 fn can_run_debounced_refresh(state: &State) -> bool {
@@ -759,6 +770,7 @@ fn apply_runtime_config(state: &mut State, config: RpcConfig) {
     state.rpc.client = RpcClient::new(config.clone());
     state.config.form = ConfigForm::from(&config);
     state.config.error = None;
+    state.dashboard.request_gen = state.dashboard.request_gen.wrapping_add(1);
     apply_zmq_runtime(state, &previous_zmq);
 }
 

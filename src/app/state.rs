@@ -196,6 +196,7 @@ pub struct DashboardState {
     pub last_refresh_at: Option<Instant>,
     pub netinfo_level: u8,
     pub panes: pane_grid::State<DashboardPane>,
+    pub request_gen: u64,
 }
 
 pub struct ZmqViewState {
@@ -322,6 +323,7 @@ impl State {
                 pending_partial: None,
                 last_refresh_at: None,
                 netinfo_level: 3,
+                request_gen: 0,
                 panes: pane_grid::State::with_configuration(
                     pane_grid::Configuration::Split {
                         axis: pane_grid::Axis::Horizontal,
