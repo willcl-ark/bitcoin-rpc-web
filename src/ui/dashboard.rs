@@ -321,6 +321,26 @@ fn peer_table(state: &State) -> Element<'_, Message> {
             }
             content = content.push(header);
 
+            let mut units = row![].spacing(2);
+            units = units
+                .push(cell!("", 35.0))
+                .push(cell!("", 65.0))
+                .push(cell!("", 55.0))
+                .push(cell!("", 60.0))
+                .push(cell!("", 22.0))
+                .push(cell!("ms", 60.0).color(components::MUTED))
+                .push(cell!("ms", 60.0).color(components::MUTED))
+                .push(cell!("sec", 50.0).color(components::MUTED))
+                .push(cell!("sec", 50.0).color(components::MUTED))
+                .push(cell!("min", 45.0).color(components::MUTED))
+                .push(cell!("min", 45.0).color(components::MUTED))
+                .push(cell!("", 28.0))
+                .push(cell!("", 55.0))
+                .push(cell!("", 50.0))
+                .push(cell!("min", 50.0).color(components::MUTED))
+                .push(cell!("", 38.0));
+            content = content.push(units);
+
             for peer in sorted_peers(state, &snapshot.peers) {
                 let selected = state.dashboard.selected_peer_id == Some(peer.id);
                 let type_short = connection_type_short(&peer.connection_type);
