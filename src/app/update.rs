@@ -10,6 +10,7 @@ use crate::core::rpc_client::{
     MAX_ZMQ_BUFFER_LIMIT, MIN_ZMQ_BUFFER_LIMIT, RpcClient, RpcConfig, allow_insecure,
     is_safe_rpc_host,
 };
+use crate::music::MusicRuntime;
 use crate::zmq::{start_zmq_subscriber, stop_zmq_subscriber};
 
 const ZMQ_REFRESH_DEBOUNCE_MS: u64 = 800;
@@ -18,7 +19,53 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
     match message {
         Message::SelectTab(tab) => {
             state.active_tab = tab;
+            Task::none()
         }
+
+        Message::ConfigUrlChanged(..)
+        | Message::ConfigUserChanged(..)
+        | Message::ConfigPasswordChanged(..)
+        | Message::ConfigWalletChanged(..)
+        | Message::ConfigPollIntervalChanged(..)
+        | Message::ConfigZmqAddressChanged(..)
+        | Message::ConfigZmqBufferLimitChanged(..)
+        | Message::ConfigConnectPressed
+        | Message::ConfigConnectFinished(..)
+        | Message::ConfigReloadPressed
+        | Message::ConfigReloadFinished(..)
+        | Message::ConfigSavePressed
+        | Message::ConfigSaveFinished(..) => handle_config(state, message),
+
+        Message::RpcSearchChanged(..)
+        | Message::RpcCategoryToggled(..)
+        | Message::RpcMethodSelected(..)
+        | Message::RpcParamsChanged(..)
+        | Message::RpcBatchModeToggled(..)
+        | Message::RpcBatchChanged(..)
+        | Message::RpcExecutePressed
+        | Message::RpcExecuteFinished(..) => handle_rpc(state, message),
+
+        Message::DashboardTick
+        | Message::DashboardLoaded(..)
+        | Message::DashboardPeerSelected(..)
+        | Message::DashboardPeerDetailClosed
+        | Message::DashboardPeerSortPressed(..)
+        | Message::DashboardPartialRefreshRequested(..)
+        | Message::DashboardPartialLoaded(..) => handle_dashboard(state, message),
+
+        Message::ZmqPollTick => handle_zmq(state),
+
+        Message::MusicPlayPause
+        | Message::MusicNext
+        | Message::MusicPrev
+        | Message::MusicSetVolume(..)
+        | Message::MusicToggleMute
+        | Message::MusicPollTick => handle_music(state, message),
+    }
+}
+
+fn handle_config(state: &mut State, message: Message) -> Task<Message> {
+    match message {
         Message::ConfigUrlChanged(value) => {
             state.config.form.url = value;
             clear_form_feedback(state);
@@ -166,6 +213,14 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
                 }
             }
         }
+        _ => {}
+    }
+
+    Task::none()
+}
+
+fn handle_rpc(state: &mut State, message: Message) -> Task<Message> {
+    match message {
         Message::RpcSearchChanged(value) => {
             state.rpc.search = value;
         }
@@ -235,6 +290,14 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
                 }
             }
         }
+        _ => {}
+    }
+
+    Task::none()
+}
+
+fn handle_dashboard(state: &mut State, message: Message) -> Task<Message> {
+    match message {
         Message::DashboardTick => {
             if state.dashboard.in_flight {
                 return Task::none();
@@ -309,57 +372,49 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
             }
             return schedule_pending_partial_if_ready(state);
         }
-        Message::ZmqPollTick => {
-            poll_zmq_feed(state);
-            if let Some(partial) = state.dashboard.pending_partial
-                && !state.dashboard.in_flight
-                && can_run_debounced_refresh(state)
-            {
-                state.dashboard.pending_partial = None;
-                return Task::perform(
-                    async move { partial },
-                    Message::DashboardPartialRefreshRequested,
-                );
-            }
-        }
-        Message::MusicPlayPause => {
-            if let Some(rt) = &state.music {
-                rt.play_pause();
-                state.music_snapshot = rt.snapshot();
-            }
-        }
-        Message::MusicNext => {
-            if let Some(rt) = &state.music {
-                rt.next();
-                state.music_snapshot = rt.snapshot();
-            }
-        }
-        Message::MusicPrev => {
-            if let Some(rt) = &state.music {
-                rt.prev();
-                state.music_snapshot = rt.snapshot();
-            }
-        }
-        Message::MusicSetVolume(v) => {
-            if let Some(rt) = &state.music {
-                rt.set_volume(v);
-                state.music_snapshot = rt.snapshot();
-            }
-        }
-        Message::MusicToggleMute => {
-            if let Some(rt) = &state.music {
-                rt.toggle_mute();
-                state.music_snapshot = rt.snapshot();
-            }
-        }
+        _ => {}
+    }
+
+    Task::none()
+}
+
+fn handle_zmq(state: &mut State) -> Task<Message> {
+    poll_zmq_feed(state);
+    if let Some(partial) = state.dashboard.pending_partial
+        && !state.dashboard.in_flight
+        && can_run_debounced_refresh(state)
+    {
+        state.dashboard.pending_partial = None;
+        return Task::perform(
+            async move { partial },
+            Message::DashboardPartialRefreshRequested,
+        );
+    }
+    Task::none()
+}
+
+fn handle_music(state: &mut State, message: Message) -> Task<Message> {
+    match message {
+        Message::MusicPlayPause => with_music(state, MusicRuntime::play_pause),
+        Message::MusicNext => with_music(state, MusicRuntime::next),
+        Message::MusicPrev => with_music(state, MusicRuntime::prev),
+        Message::MusicSetVolume(v) => with_music(state, |rt| rt.set_volume(v)),
+        Message::MusicToggleMute => with_music(state, MusicRuntime::toggle_mute),
         Message::MusicPollTick => {
             if let Some(rt) = &state.music {
                 state.music_snapshot = rt.snapshot();
             }
         }
+        _ => {}
     }
-
     Task::none()
+}
+
+fn with_music(state: &mut State, f: impl FnOnce(&MusicRuntime)) {
+    if let Some(rt) = &state.music {
+        f(rt);
+        state.music_snapshot = rt.snapshot();
+    }
 }
 
 fn schedule_pending_partial_if_ready(state: &mut State) -> Task<Message> {
