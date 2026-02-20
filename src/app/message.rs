@@ -1,6 +1,18 @@
 use crate::app::state::Tab;
+use crate::core::rpc_client::RpcConfig;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum Message {
     SelectTab(Tab),
+    ConfigUrlChanged(String),
+    ConfigUserChanged(String),
+    ConfigPasswordChanged(String),
+    ConfigWalletChanged(String),
+    ConfigPollIntervalChanged(String),
+    ConfigZmqAddressChanged(String),
+    ConfigZmqBufferLimitChanged(String),
+    ConfigConnectPressed,
+    ConfigConnectFinished(Result<RpcConfig, String>),
+    ConfigSavePressed,
+    ConfigSaveFinished(Result<(), String>),
 }

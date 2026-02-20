@@ -1,3 +1,9 @@
+use std::sync::Arc;
+
+use crate::core::config_store::ConfigStore;
+use crate::core::rpc_client::{MAX_ZMQ_BUFFER_LIMIT, MIN_ZMQ_BUFFER_LIMIT, RpcClient, RpcConfig};
+use crate::zmq::{ZmqHandle, ZmqSharedState, stop_zmq_subscriber};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Tab {
     #[default]
@@ -6,7 +12,105 @@ pub enum Tab {
     Config,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone)]
+pub struct ConfigForm {
+    pub url: String,
+    pub user: String,
+    pub password: String,
+    pub wallet: String,
+    pub poll_interval_secs: String,
+    pub zmq_address: String,
+    pub zmq_buffer_limit: String,
+}
+
+impl From<&RpcConfig> for ConfigForm {
+    fn from(config: &RpcConfig) -> Self {
+        Self {
+            url: config.url.clone(),
+            user: config.user.clone(),
+            password: config.password.clone(),
+            wallet: config.wallet.clone(),
+            poll_interval_secs: config.poll_interval_secs.to_string(),
+            zmq_address: config.zmq_address.clone(),
+            zmq_buffer_limit: config.zmq_buffer_limit.to_string(),
+        }
+    }
+}
+
 pub struct State {
     pub active_tab: Tab,
+    pub config_store: Option<ConfigStore>,
+    pub config_store_path: Option<String>,
+    pub config_store_error: Option<String>,
+    pub config_form: ConfigForm,
+    pub runtime_config: RpcConfig,
+    pub rpc_client: RpcClient,
+    pub zmq_state: Arc<ZmqSharedState>,
+    pub zmq_handle: Option<ZmqHandle>,
+    pub connect_in_flight: bool,
+    pub save_in_flight: bool,
+    pub config_status: Option<String>,
+    pub config_error: Option<String>,
+}
+
+impl State {
+    pub fn new() -> Self {
+        let mut config_store = None;
+        let mut config_store_path = None;
+        let mut config_store_error = None;
+
+        let runtime_config = match ConfigStore::new() {
+            Ok(store) => {
+                config_store_path = Some(store.path().display().to_string());
+                let loaded = match store.load() {
+                    Ok(config) => config,
+                    Err(error) => {
+                        config_store_error = Some(format!("failed to load config: {error}"));
+                        RpcConfig::default()
+                    }
+                };
+                config_store = Some(store);
+                loaded
+            }
+            Err(error) => {
+                config_store_error = Some(format!("failed to resolve config path: {error}"));
+                RpcConfig::default()
+            }
+        };
+
+        let zmq = ZmqSharedState::default();
+        zmq.state.lock().expect("zmq state lock").buffer_limit = runtime_config
+            .zmq_buffer_limit
+            .clamp(MIN_ZMQ_BUFFER_LIMIT, MAX_ZMQ_BUFFER_LIMIT);
+
+        Self {
+            active_tab: Tab::default(),
+            config_store,
+            config_store_path,
+            config_store_error,
+            config_form: ConfigForm::from(&runtime_config),
+            rpc_client: RpcClient::new(runtime_config.clone()),
+            runtime_config,
+            zmq_state: Arc::new(zmq),
+            zmq_handle: None,
+            connect_in_flight: false,
+            save_in_flight: false,
+            config_status: None,
+            config_error: None,
+        }
+    }
+}
+
+impl Default for State {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Drop for State {
+    fn drop(&mut self) {
+        if let Some(handle) = self.zmq_handle.take() {
+            stop_zmq_subscriber(handle);
+        }
+    }
 }

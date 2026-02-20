@@ -1,14 +1,221 @@
 use iced::Task;
 
 use crate::app::message::Message;
-use crate::app::state::State;
+use crate::app::state::{ConfigForm, State};
+use crate::core::config_store::ConfigStore;
+use crate::core::rpc_client::{
+    MAX_ZMQ_BUFFER_LIMIT, MIN_ZMQ_BUFFER_LIMIT, RpcClient, RpcConfig, allow_insecure,
+    is_safe_rpc_host,
+};
+use crate::zmq::{start_zmq_subscriber, stop_zmq_subscriber};
 
 pub fn update(state: &mut State, message: Message) -> Task<Message> {
     match message {
         Message::SelectTab(tab) => {
             state.active_tab = tab;
         }
+        Message::ConfigUrlChanged(value) => {
+            state.config_form.url = value;
+            clear_form_feedback(state);
+        }
+        Message::ConfigUserChanged(value) => {
+            state.config_form.user = value;
+            clear_form_feedback(state);
+        }
+        Message::ConfigPasswordChanged(value) => {
+            state.config_form.password = value;
+            clear_form_feedback(state);
+        }
+        Message::ConfigWalletChanged(value) => {
+            state.config_form.wallet = value;
+            clear_form_feedback(state);
+        }
+        Message::ConfigPollIntervalChanged(value) => {
+            state.config_form.poll_interval_secs = value;
+            clear_form_feedback(state);
+        }
+        Message::ConfigZmqAddressChanged(value) => {
+            state.config_form.zmq_address = value;
+            clear_form_feedback(state);
+        }
+        Message::ConfigZmqBufferLimitChanged(value) => {
+            state.config_form.zmq_buffer_limit = value;
+            clear_form_feedback(state);
+        }
+        Message::ConfigConnectPressed => {
+            if state.connect_in_flight {
+                return Task::none();
+            }
+
+            let next_config = match parse_config_form(&state.config_form) {
+                Ok(config) => config,
+                Err(error) => {
+                    state.config_error = Some(error);
+                    state.config_status = None;
+                    return Task::none();
+                }
+            };
+
+            if !is_safe_rpc_host(&next_config.url) && !allow_insecure() {
+                state.config_error = Some(
+                    "RPC URL must be localhost/private unless DANGER_INSECURE_RPC=1".to_string(),
+                );
+                state.config_status = None;
+                return Task::none();
+            }
+
+            state.connect_in_flight = true;
+            state.config_error = None;
+            state.config_status = Some("Connecting...".to_string());
+
+            return Task::perform(test_rpc_config(next_config), Message::ConfigConnectFinished);
+        }
+        Message::ConfigConnectFinished(result) => {
+            state.connect_in_flight = false;
+
+            match result {
+                Ok(config) => {
+                    let previous_zmq = state.runtime_config.zmq_address.clone();
+                    state.runtime_config = config.clone();
+                    state.rpc_client = RpcClient::new(config.clone());
+                    state.config_form = ConfigForm::from(&config);
+                    state.config_error = None;
+                    state.config_status = Some("Connected successfully.".to_string());
+                    apply_zmq_runtime(state, &previous_zmq);
+                }
+                Err(error) => {
+                    state.config_status = None;
+                    state.config_error = Some(error);
+                }
+            }
+        }
+        Message::ConfigSavePressed => {
+            if state.save_in_flight {
+                return Task::none();
+            }
+
+            let store = match &state.config_store {
+                Some(store) => store.clone(),
+                None => {
+                    state.config_error = Some("config store unavailable".to_string());
+                    state.config_status = None;
+                    return Task::none();
+                }
+            };
+
+            let config = match parse_config_form(&state.config_form) {
+                Ok(config) => config,
+                Err(error) => {
+                    state.config_error = Some(error);
+                    state.config_status = None;
+                    return Task::none();
+                }
+            };
+
+            if !is_safe_rpc_host(&config.url) && !allow_insecure() {
+                state.config_error = Some(
+                    "RPC URL must be localhost/private unless DANGER_INSECURE_RPC=1".to_string(),
+                );
+                state.config_status = None;
+                return Task::none();
+            }
+
+            state.save_in_flight = true;
+            state.config_error = None;
+            state.config_status = Some("Saving...".to_string());
+            return Task::perform(save_config(store, config), Message::ConfigSaveFinished);
+        }
+        Message::ConfigSaveFinished(result) => {
+            state.save_in_flight = false;
+
+            match result {
+                Ok(()) => {
+                    state.config_error = None;
+                    state.config_status = Some("Settings saved.".to_string());
+                }
+                Err(error) => {
+                    state.config_status = None;
+                    state.config_error = Some(error);
+                }
+            }
+        }
     }
 
     Task::none()
+}
+
+fn clear_form_feedback(state: &mut State) {
+    state.config_error = None;
+    state.config_status = None;
+}
+
+fn parse_config_form(form: &ConfigForm) -> Result<RpcConfig, String> {
+    let url = form.url.trim();
+    if url.is_empty() {
+        return Err("RPC URL is required".to_string());
+    }
+
+    let poll_interval_secs = form
+        .poll_interval_secs
+        .trim()
+        .parse::<u64>()
+        .map_err(|_| "Poll interval must be a positive integer".to_string())?
+        .clamp(1, 3600);
+
+    let zmq_buffer_limit = form
+        .zmq_buffer_limit
+        .trim()
+        .parse::<usize>()
+        .map_err(|_| "ZMQ buffer limit must be an integer".to_string())?
+        .clamp(MIN_ZMQ_BUFFER_LIMIT, MAX_ZMQ_BUFFER_LIMIT);
+
+    Ok(RpcConfig {
+        url: url.to_string(),
+        user: form.user.clone(),
+        password: form.password.clone(),
+        wallet: form.wallet.clone(),
+        poll_interval_secs,
+        zmq_address: form.zmq_address.trim().to_string(),
+        zmq_buffer_limit,
+    })
+}
+
+async fn test_rpc_config(config: RpcConfig) -> Result<RpcConfig, String> {
+    let client = RpcClient::new(config.clone());
+    client
+        .call("getblockchaininfo", serde_json::json!([]))
+        .map_err(|error| error.to_string())?;
+    Ok(config)
+}
+
+async fn save_config(store: ConfigStore, config: RpcConfig) -> Result<(), String> {
+    store
+        .save(&config)
+        .map_err(|error| format!("failed to save config: {error}"))
+}
+
+fn apply_zmq_runtime(state: &mut State, previous_address: &str) {
+    {
+        let mut zmq_state = state.zmq_state.state.lock().expect("zmq state lock");
+        zmq_state.buffer_limit = state
+            .runtime_config
+            .zmq_buffer_limit
+            .clamp(MIN_ZMQ_BUFFER_LIMIT, MAX_ZMQ_BUFFER_LIMIT);
+    }
+    state.zmq_state.changed.notify_all();
+
+    let current = state.runtime_config.zmq_address.trim().to_string();
+    if current == previous_address {
+        return;
+    }
+
+    if let Some(handle) = state.zmq_handle.take() {
+        stop_zmq_subscriber(handle);
+    }
+
+    if current.is_empty() {
+        return;
+    }
+
+    state.zmq_handle = Some(start_zmq_subscriber(&current, state.zmq_state.clone()));
 }
