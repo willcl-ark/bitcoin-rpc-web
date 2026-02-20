@@ -16,6 +16,17 @@ use crate::zmq::{start_zmq_subscriber, stop_zmq_subscriber};
 
 const ZMQ_REFRESH_DEBOUNCE_MS: u64 = 800;
 
+const UNSAFE_HOST_ERROR: &str =
+    "RPC URL must be localhost/private unless DANGER_INSECURE_RPC=1";
+
+pub fn validate_rpc_host(config: &RpcConfig) -> Result<(), String> {
+    if is_safe_rpc_host(&config.url) || allow_insecure() {
+        Ok(())
+    } else {
+        Err(UNSAFE_HOST_ERROR.to_string())
+    }
+}
+
 pub fn update(state: &mut State, message: Message) -> Task<Message> {
     match message {
         Message::ThemeChanged(name) => {
@@ -135,10 +146,8 @@ fn handle_config(state: &mut State, message: Message) -> Task<Message> {
                 }
             };
 
-            if !is_safe_rpc_host(&next_config.url) && !allow_insecure() {
-                state.config.error = Some(
-                    "RPC URL must be localhost/private unless DANGER_INSECURE_RPC=1".to_string(),
-                );
+            if let Err(error) = validate_rpc_host(&next_config) {
+                state.config.error = Some(error);
                 state.config.status = None;
                 return Task::none();
             }
@@ -212,10 +221,8 @@ fn handle_config(state: &mut State, message: Message) -> Task<Message> {
                 }
             };
 
-            if !is_safe_rpc_host(&config.url) && !allow_insecure() {
-                state.config.error = Some(
-                    "RPC URL must be localhost/private unless DANGER_INSECURE_RPC=1".to_string(),
-                );
+            if let Err(error) = validate_rpc_host(&config) {
+                state.config.error = Some(error);
                 state.config.status = None;
                 return Task::none();
             }

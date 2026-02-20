@@ -4,6 +4,7 @@ use std::time::Instant;
 
 use iced::widget::{pane_grid, text_input};
 
+use crate::app::update::validate_rpc_host;
 use crate::core::config_store::ConfigStore;
 use crate::ui::components::ColorTheme;
 use crate::core::dashboard_service::DashboardSnapshot;
@@ -234,7 +235,13 @@ impl State {
             Ok(store) => {
                 config_store_path = Some(store.path().display().to_string());
                 let loaded = match store.load() {
-                    Ok(config) => config,
+                    Ok(config) => match validate_rpc_host(&config) {
+                        Ok(()) => config,
+                        Err(error) => {
+                            config_store_error = Some(error);
+                            RpcConfig::default()
+                        }
+                    },
                     Err(error) => {
                         config_store_error = Some(format!("failed to load config: {error}"));
                         RpcConfig::default()
