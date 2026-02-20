@@ -7,6 +7,7 @@ pub mod view;
 pub fn run() -> iced::Result {
     iced::application("Bitcoin Core RPC", update::update, view::view)
         .subscription(subscription::subscriptions)
+        .default_font(iced::Font::MONOSPACE)
         .theme(|_| crate::ui::components::mission_theme())
         .run_with(|| {
             (

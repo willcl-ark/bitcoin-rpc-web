@@ -67,7 +67,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
             )
             .width(iced::Length::FillPortion(1)),
         ]
-        .spacing(10)
+        .spacing(8)
         .into()
     } else {
         container(text("NO DASHBOARD DATA YET").color(components::MUTED))
@@ -78,7 +78,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
 
     let main_body = container(peer_table(state))
         .style(components::panel_style())
-        .padding(12)
+        .padding(8)
         .width(Fill)
         .height(Fill);
 
@@ -115,15 +115,15 @@ pub fn view(state: &State) -> Element<'_, Message> {
                 .width(iced::Length::FillPortion(1))
                 .color(components::MUTED),
             text("EVENT")
-                .width(iced::Length::FillPortion(5))
+                .width(iced::Length::FillPortion(4))
                 .color(components::MUTED),
             text("TIME")
-                .width(iced::Length::FillPortion(1))
+                .width(iced::Length::FillPortion(2))
                 .color(components::MUTED),
         ]
-        .spacing(6)
+        .spacing(4)
     ]
-    .spacing(4);
+    .spacing(2);
 
     if state.zmq_recent_events.is_empty() {
         live_rows = live_rows.push(text("No ZMQ events yet.").color(components::MUTED));
@@ -134,10 +134,10 @@ pub fn view(state: &State) -> Element<'_, Message> {
                     text(&evt.topic)
                         .color(components::ACCENT)
                         .width(iced::Length::FillPortion(1)),
-                    text(&evt.event_hash).width(iced::Length::FillPortion(5)),
-                    text(format_event_time(evt.timestamp)).width(iced::Length::FillPortion(1)),
+                    text(&evt.event_hash).width(iced::Length::FillPortion(4)),
+                    text(format_event_time(evt.timestamp)).width(iced::Length::FillPortion(2)),
                 ]
-                .spacing(6),
+                .spacing(4),
             );
         }
     }
@@ -146,23 +146,23 @@ pub fn view(state: &State) -> Element<'_, Message> {
         row![
             container(zmq_summary)
                 .style(components::card_style())
-                .padding(10)
+                .padding(8)
                 .width(iced::Length::FillPortion(2)),
             container(
                 column![
                     text("LIVE EVENTS").size(14).color(components::ACCENT),
                     scrollable(live_rows).height(160)
                 ]
-                .spacing(6)
+                .spacing(4)
             )
             .style(components::card_style())
-            .padding(10)
+            .padding(8)
             .width(iced::Length::FillPortion(5)),
         ]
-        .spacing(10),
+        .spacing(8),
     )
     .style(components::panel_style())
-    .padding(10)
+    .padding(8)
     .width(Fill);
 
     let mut root = column![
@@ -177,7 +177,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
         main_body,
         zmq_panel
     ]
-    .spacing(12)
+    .spacing(8)
     .height(Fill)
     .width(Fill);
 
@@ -200,9 +200,9 @@ fn peer_table(state: &State) -> Element<'_, Message> {
             .width(iced::Length::FillPortion(2)),
         sort_header(state, "Ping", PeerSortField::Ping).width(iced::Length::FillPortion(1)),
     ]
-    .spacing(8);
+    .spacing(4);
 
-    let mut rows = column![text("PEERS").size(16).color(components::ACCENT), header].spacing(6);
+    let mut rows = column![text("PEERS").size(15).color(components::ACCENT), header].spacing(2);
 
     if let Some(snapshot) = &state.dashboard_snapshot {
         for peer in sorted_peers(state, &snapshot.peers) {
@@ -226,13 +226,13 @@ fn peer_table(state: &State) -> Element<'_, Message> {
                 text(peer.connection_type.clone()).width(iced::Length::FillPortion(2)),
                 text(ping).width(iced::Length::FillPortion(1)),
             ]
-            .spacing(8);
+            .spacing(4);
 
             rows = rows.push(
                 button(row_line)
                     .width(Fill)
                     .style(components::row_button_style(selected))
-                    .padding([3, 6])
+                    .padding([1, 4])
                     .on_press(Message::DashboardPeerSelected(peer.id)),
             );
         }
@@ -240,17 +240,17 @@ fn peer_table(state: &State) -> Element<'_, Message> {
         rows = rows.push(text("No peer data").color(components::MUTED));
     }
 
-    if let Some(snapshot) = &state.dashboard_snapshot
+    let detail_panel = if let Some(snapshot) = &state.dashboard_snapshot
         && let Some(selected_id) = state.dashboard_selected_peer_id
         && let Some(raw) = snapshot.peer_details.get(&selected_id)
     {
         let rendered = serde_json::to_string_pretty(raw)
             .unwrap_or_else(|_| "{\"error\":\"failed to format peer\"}".to_string());
-        rows = rows.push(
+        Some(
             container(
                 column![
                     row![
-                        text(format!("PEER {selected_id}"))
+                        text(format!("PEER {selected_id} DETAIL"))
                             .size(14)
                             .color(components::ACCENT),
                         button(text("Close").color(components::MUTED))
@@ -258,15 +258,24 @@ fn peer_table(state: &State) -> Element<'_, Message> {
                             .on_press(Message::DashboardPeerDetailClosed),
                     ]
                     .spacing(8),
-                    scrollable(text(rendered).size(12).color(components::TEXT)).height(180),
+                    scrollable(text(rendered).size(12).color(components::TEXT)).height(170),
                 ]
                 .spacing(6),
             )
             .style(components::card_style())
-            .padding(10),
-        );
+            .padding(8)
+            .width(Fill),
+        )
+    } else {
+        None
+    };
+
+    let table = scrollable(rows).height(Fill);
+    if let Some(detail) = detail_panel {
+        column![table, detail].spacing(6).into()
+    } else {
+        table.into()
     }
-    scrollable(rows).into()
 }
 
 fn summary_card<'a>(
@@ -278,7 +287,7 @@ fn summary_card<'a>(
             .size(14)
             .color(components::ACCENT)
     ]
-    .spacing(4);
+    .spacing(3);
     for (key, value) in lines {
         content = content.push(
             row![
@@ -289,11 +298,11 @@ fn summary_card<'a>(
                     .color(components::TEXT)
                     .width(iced::Length::FillPortion(5))
             ]
-            .spacing(4),
+            .spacing(3),
         );
     }
     container(content)
-        .padding(10)
+        .padding(8)
         .style(components::card_style())
 }
 
@@ -312,13 +321,13 @@ fn sort_header<'a>(
     } else {
         ""
     };
-    button(text(format!("{label}{marker}")).size(12).color(if active {
+    button(text(format!("{label}{marker}")).size(11).color(if active {
         components::ACCENT
     } else {
         components::MUTED
     }))
-    .style(components::utility_button_style(active))
-    .padding([3, 6])
+    .style(components::table_header_button_style(active))
+    .padding([1, 2])
     .on_press(Message::DashboardPeerSortPressed(field))
 }
 
@@ -343,6 +352,6 @@ fn sorted_peers<'a>(state: &State, peers: &'a [PeerSummary]) -> Vec<&'a PeerSumm
 
 fn format_event_time(timestamp: u64) -> String {
     DateTime::from_timestamp(timestamp as i64, 0)
-        .map(|dt: DateTime<Utc>| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+        .map(|dt: DateTime<Utc>| dt.format("%Y-%m-%d %H:%M:%S").to_string())
         .unwrap_or_else(|| timestamp.to_string())
 }

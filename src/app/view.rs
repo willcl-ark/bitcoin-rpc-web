@@ -16,8 +16,8 @@ pub fn view(state: &State) -> Element<'_, Message> {
         nav_button("RPC", Tab::Rpc, state.active_tab),
         nav_button("CONFIG", Tab::Config, state.active_tab),
     ]
-    .spacing(8)
-    .padding(16)
+    .spacing(6)
+    .padding(12)
     .width(180);
 
     let content = match state.active_tab {
@@ -30,16 +30,16 @@ pub fn view(state: &State) -> Element<'_, Message> {
         row![
             container(nav)
                 .style(components::panel_style())
-                .width(250)
+                .width(235)
                 .height(Fill),
             content
         ]
-        .spacing(10)
+        .spacing(8)
         .height(Fill)
         .width(Fill),
     )
     .style(components::app_surface())
-    .padding(14)
+    .padding(10)
     .height(Fill)
     .width(Fill)
     .into()
@@ -49,7 +49,7 @@ fn nav_button(label: &'static str, tab: Tab, active_tab: Tab) -> Element<'static
     button(text(format!("[{}]", label)))
         .width(Fill)
         .style(components::nav_button_style(tab == active_tab))
-        .padding([8, 10])
+        .padding([6, 8])
         .on_press(Message::SelectTab(tab))
         .into()
 }

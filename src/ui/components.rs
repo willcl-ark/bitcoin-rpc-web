@@ -14,8 +14,8 @@ pub const AMBER: Color = Color::from_rgb(0.98, 0.69, 0.16);
 pub const ERROR_RED: Color = Color::from_rgb(0.95, 0.32, 0.29);
 pub const TEXT: Color = Color::from_rgb(0.81, 0.92, 0.98);
 pub const MUTED: Color = Color::from_rgb(0.44, 0.63, 0.75);
-pub const BORDER: Color = Color::from_rgb(0.11, 0.37, 0.48);
-pub const BORDER_HOT: Color = Color::from_rgb(0.22, 0.86, 0.95);
+pub const BORDER: Color = Color::from_rgb(0.08, 0.27, 0.36);
+pub const BORDER_HOT: Color = Color::from_rgb(0.14, 0.64, 0.74);
 
 pub fn placeholder_card<'a>(title: &'a str, body: &'a str) -> Element<'a, Message> {
     container(column![text(title).size(24).color(TEXT), text(body).color(MUTED)].spacing(8))
@@ -114,25 +114,30 @@ pub fn nav_button_style(active: bool) -> impl Fn(&Theme, button::Status) -> butt
 
 pub fn row_button_style(selected: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
     move |_theme, status| {
-        let (base, border, text_color) = if selected {
-            (Color::from_rgb(0.06, 0.20, 0.28), BORDER_HOT, ACCENT)
+        let (base, border, border_width, text_color) = if selected {
+            (
+                Color::from_rgba(ACCENT_ALT.r, ACCENT_ALT.g, ACCENT_ALT.b, 0.16),
+                BORDER_HOT,
+                1.0,
+                ACCENT,
+            )
         } else {
-            (PANEL, BORDER, TEXT)
+            (Color::TRANSPARENT, Color::TRANSPARENT, 0.0, TEXT)
         };
 
         let background = match status {
             button::Status::Hovered => {
                 if selected {
-                    Color::from_rgb(0.08, 0.25, 0.34)
+                    Color::from_rgba(ACCENT_ALT.r, ACCENT_ALT.g, ACCENT_ALT.b, 0.22)
                 } else {
-                    PANEL_ALT
+                    Color::from_rgba(ACCENT_ALT.r, ACCENT_ALT.g, ACCENT_ALT.b, 0.10)
                 }
             }
             button::Status::Pressed => {
                 if selected {
-                    Color::from_rgb(0.05, 0.16, 0.22)
+                    Color::from_rgba(ACCENT_ALT.r, ACCENT_ALT.g, ACCENT_ALT.b, 0.28)
                 } else {
-                    Color::from_rgb(0.02, 0.07, 0.11)
+                    Color::from_rgba(ACCENT_ALT.r, ACCENT_ALT.g, ACCENT_ALT.b, 0.14)
                 }
             }
             button::Status::Disabled => Color::from_rgba(base.r, base.g, base.b, 0.6),
@@ -143,7 +148,7 @@ pub fn row_button_style(selected: bool) -> impl Fn(&Theme, button::Status) -> bu
             background: Some(Background::Color(background)),
             border: Border {
                 radius: 0.0.into(),
-                width: 1.0,
+                width: border_width,
                 color: border,
             },
             text_color,
@@ -173,6 +178,37 @@ pub fn utility_button_style(active: bool) -> impl Fn(&Theme, button::Status) -> 
                 color: edge,
             },
             text_color,
+            shadow: Shadow::default(),
+        }
+    }
+}
+
+pub fn table_header_button_style(active: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
+    move |_theme, status| {
+        let base_bg = if active {
+            Color::from_rgba(ACCENT_ALT.r, ACCENT_ALT.g, ACCENT_ALT.b, 0.10)
+        } else {
+            Color::TRANSPARENT
+        };
+        let background = match status {
+            button::Status::Hovered => {
+                Color::from_rgba(ACCENT_ALT.r, ACCENT_ALT.g, ACCENT_ALT.b, 0.14)
+            }
+            button::Status::Pressed => {
+                Color::from_rgba(ACCENT_ALT.r, ACCENT_ALT.g, ACCENT_ALT.b, 0.20)
+            }
+            button::Status::Disabled => Color::from_rgba(base_bg.r, base_bg.g, base_bg.b, 0.6),
+            _ => base_bg,
+        };
+
+        button::Style {
+            background: Some(Background::Color(background)),
+            border: Border {
+                radius: 0.0.into(),
+                width: if active { 1.0 } else { 0.0 },
+                color: if active { BORDER } else { Color::TRANSPARENT },
+            },
+            text_color: if active { ACCENT } else { MUTED },
             shadow: Shadow::default(),
         }
     }
