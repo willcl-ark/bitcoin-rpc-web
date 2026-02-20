@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::core::config_store::ConfigStore;
 use crate::core::rpc_client::{MAX_ZMQ_BUFFER_LIMIT, MIN_ZMQ_BUFFER_LIMIT, RpcClient, RpcConfig};
-use crate::zmq::{ZmqHandle, ZmqSharedState, stop_zmq_subscriber};
+use crate::zmq::{ZmqHandle, ZmqSharedState, start_zmq_subscriber, stop_zmq_subscriber};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Tab {
@@ -83,7 +83,7 @@ impl State {
             .zmq_buffer_limit
             .clamp(MIN_ZMQ_BUFFER_LIMIT, MAX_ZMQ_BUFFER_LIMIT);
 
-        Self {
+        let mut state = Self {
             active_tab: Tab::default(),
             config_store,
             config_store_path,
@@ -97,7 +97,14 @@ impl State {
             save_in_flight: false,
             config_status: None,
             config_error: None,
+        };
+
+        let startup_zmq = state.runtime_config.zmq_address.trim().to_string();
+        if !startup_zmq.is_empty() {
+            state.zmq_handle = Some(start_zmq_subscriber(&startup_zmq, state.zmq_state.clone()));
         }
+
+        state
     }
 }
 

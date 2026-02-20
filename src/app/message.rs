@@ -13,6 +13,8 @@ pub enum Message {
     ConfigZmqBufferLimitChanged(String),
     ConfigConnectPressed,
     ConfigConnectFinished(Result<RpcConfig, String>),
+    ConfigReloadPressed,
+    ConfigReloadFinished(Result<RpcConfig, String>),
     ConfigSavePressed,
-    ConfigSaveFinished(Result<(), String>),
+    ConfigSaveFinished(Result<RpcConfig, String>),
 }

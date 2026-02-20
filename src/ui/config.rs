@@ -18,6 +18,11 @@ pub fn view(state: &State) -> Element<'_, Message> {
     } else {
         button("Save").on_press(Message::ConfigSavePressed)
     };
+    let reload_button = if state.save_in_flight || state.connect_in_flight {
+        button("Reload")
+    } else {
+        button("Reload").on_press(Message::ConfigReloadPressed)
+    };
 
     let mut content = column![
         text("Config").size(26),
@@ -49,7 +54,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
         text_input("5000", &form.zmq_buffer_limit)
             .on_input(Message::ConfigZmqBufferLimitChanged)
             .padding(8),
-        row![connect_button, save_button].spacing(12),
+        row![connect_button, save_button, reload_button].spacing(12),
     ]
     .spacing(8);
 

@@ -75,13 +75,8 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
 
             match result {
                 Ok(config) => {
-                    let previous_zmq = state.runtime_config.zmq_address.clone();
-                    state.runtime_config = config.clone();
-                    state.rpc_client = RpcClient::new(config.clone());
-                    state.config_form = ConfigForm::from(&config);
-                    state.config_error = None;
+                    apply_runtime_config(state, config);
                     state.config_status = Some("Connected successfully.".to_string());
-                    apply_zmq_runtime(state, &previous_zmq);
                 }
                 Err(error) => {
                     state.config_status = None;
@@ -89,6 +84,30 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
                 }
             }
         }
+        Message::ConfigReloadPressed => {
+            let store = match &state.config_store {
+                Some(store) => store.clone(),
+                None => {
+                    state.config_error = Some("config store unavailable".to_string());
+                    state.config_status = None;
+                    return Task::none();
+                }
+            };
+
+            state.config_error = None;
+            state.config_status = Some("Reloading...".to_string());
+            return Task::perform(load_config(store), Message::ConfigReloadFinished);
+        }
+        Message::ConfigReloadFinished(result) => match result {
+            Ok(config) => {
+                apply_runtime_config(state, config);
+                state.config_status = Some("Settings reloaded.".to_string());
+            }
+            Err(error) => {
+                state.config_status = None;
+                state.config_error = Some(error);
+            }
+        },
         Message::ConfigSavePressed => {
             if state.save_in_flight {
                 return Task::none();
@@ -129,8 +148,8 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
             state.save_in_flight = false;
 
             match result {
-                Ok(()) => {
-                    state.config_error = None;
+                Ok(config) => {
+                    apply_runtime_config(state, config);
                     state.config_status = Some("Settings saved.".to_string());
                 }
                 Err(error) => {
@@ -188,10 +207,26 @@ async fn test_rpc_config(config: RpcConfig) -> Result<RpcConfig, String> {
     Ok(config)
 }
 
-async fn save_config(store: ConfigStore, config: RpcConfig) -> Result<(), String> {
+async fn load_config(store: ConfigStore) -> Result<RpcConfig, String> {
+    store
+        .load()
+        .map_err(|error| format!("failed to load config: {error}"))
+}
+
+async fn save_config(store: ConfigStore, config: RpcConfig) -> Result<RpcConfig, String> {
     store
         .save(&config)
-        .map_err(|error| format!("failed to save config: {error}"))
+        .map_err(|error| format!("failed to save config: {error}"))?;
+    Ok(config)
+}
+
+fn apply_runtime_config(state: &mut State, config: RpcConfig) {
+    let previous_zmq = state.runtime_config.zmq_address.clone();
+    state.runtime_config = config.clone();
+    state.rpc_client = RpcClient::new(config.clone());
+    state.config_form = ConfigForm::from(&config);
+    state.config_error = None;
+    apply_zmq_runtime(state, &previous_zmq);
 }
 
 fn apply_zmq_runtime(state: &mut State, previous_address: &str) {
