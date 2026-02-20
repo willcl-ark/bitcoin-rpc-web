@@ -2,12 +2,11 @@ use std::time::{Duration, Instant};
 
 use iced::Task;
 
+use crate::app::constants::ZMQ_REFRESH_DEBOUNCE_MS;
 use crate::app::message::Message;
 use crate::app::state::{DashboardPartialSet, State};
 use crate::core::dashboard_service::{DashboardPartialUpdate, DashboardService, DashboardSnapshot};
 use crate::core::rpc_client::RpcClient;
-
-const ZMQ_REFRESH_DEBOUNCE_MS: u64 = 800;
 
 pub fn handle_dashboard(state: &mut State, message: Message) -> Task<Message> {
     match message {

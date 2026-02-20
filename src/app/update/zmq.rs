@@ -1,11 +1,10 @@
 use iced::Task;
 
+use crate::app::constants::ZMQ_RECENT_EVENTS_CAP;
 use crate::app::message::Message;
 use crate::app::state::{DashboardPartialSet, State, ZmqUiEvent};
 
 use super::dashboard::can_run_debounced_refresh;
-
-const ZMQ_RECENT_EVENTS_CAP: usize = 80;
 
 pub fn handle_zmq(state: &mut State) -> Task<Message> {
     poll_zmq_feed(state);

@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use iced::widget::{button, checkbox, column, container, row, scrollable, text, text_input};
 use iced::{Element, Fill};
 
+use crate::app::constants::MAX_METHODS_SHOWN;
 use crate::app::message::Message;
 use crate::app::state::{FocusField, State};
 use crate::ui::components;
@@ -13,7 +14,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
 
     let method_list = if let Some(schema) = &state.rpc.schema {
         let mut grouped: BTreeMap<String, Vec<_>> = BTreeMap::new();
-        for method in schema.search(&state.rpc.search).into_iter().take(400) {
+        for method in schema.search(&state.rpc.search).into_iter().take(MAX_METHODS_SHOWN) {
             grouped
                 .entry(method.category.clone())
                 .or_default()
