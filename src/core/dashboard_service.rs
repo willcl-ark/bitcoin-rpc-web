@@ -299,7 +299,10 @@ fn extract_proxies(network: &serde_json::Map<String, Value>) -> String {
         if proxy.is_empty() {
             continue;
         }
-        if let Some((_, names)) = seen.iter_mut().find(|(p, _): &&mut (&str, Vec<&str>)| *p == proxy) {
+        if let Some((_, names)) = seen
+            .iter_mut()
+            .find(|(p, _): &&mut (&str, Vec<&str>)| *p == proxy)
+        {
             names.push(name);
         } else {
             seen.push((proxy, vec![name]));

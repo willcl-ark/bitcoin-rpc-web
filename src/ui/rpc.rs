@@ -23,7 +23,11 @@ pub fn view(state: &State) -> Element<'_, Message> {
         let mut list = column![text("METHOD GROUPS").size(fs + 2).color(colors.accent)].spacing(6);
 
         if grouped.is_empty() {
-            list = list.push(text("No methods match current search.").size(fs).color(colors.fg_dim));
+            list = list.push(
+                text("No methods match current search.")
+                    .size(fs)
+                    .color(colors.fg_dim),
+            );
         }
 
         for (category, mut methods) in grouped {
@@ -147,11 +151,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
         );
     }
     if let Some(error) = &state.rpc.error {
-        right = right.push(
-            text(format!("ERR: {error}"))
-                .size(fs)
-                .color(colors.red),
-        );
+        right = right.push(text(format!("ERR: {error}")).size(fs).color(colors.red));
     }
     if let Some(response) = &state.rpc.response {
         right = right

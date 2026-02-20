@@ -44,14 +44,11 @@ impl ConfigStore {
 }
 
 fn atomic_write_secure(path: &Path, data: &[u8]) -> io::Result<()> {
-    let parent = path.parent().ok_or_else(|| {
-        io::Error::new(io::ErrorKind::InvalidInput, "config path has no parent")
-    })?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "config path has no parent"))?;
 
-    let file_name = path
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy();
+    let file_name = path.file_name().unwrap_or_default().to_string_lossy();
     let tmp_path = parent.join(format!(".{file_name}.tmp"));
 
     {
@@ -168,10 +165,7 @@ mod tests {
             .save(&RpcConfig::default())
             .expect("config should save");
 
-        let mode = std::fs::metadata(&path)
-            .expect("file should exist")
-            .mode()
-            & 0o777;
+        let mode = std::fs::metadata(&path).expect("file should exist").mode() & 0o777;
         assert_eq!(mode, 0o600, "config file should be owner-only");
 
         cleanup(path);

@@ -11,15 +11,13 @@ pub fn view(state: &State) -> Element<'_, Message> {
     let mut theme_row = row![].spacing(3);
     for name in ThemeName::ALL {
         theme_row = theme_row.push(
-            button(
-                text(name.label())
-                    .size(fs.saturating_sub(4))
-                    .color(if *name == state.theme_name {
-                        colors.accent
-                    } else {
-                        colors.fg_dim
-                    }),
-            )
+            button(text(name.label()).size(fs.saturating_sub(4)).color(
+                if *name == state.theme_name {
+                    colors.accent
+                } else {
+                    colors.fg_dim
+                },
+            ))
             .style(components::utility_button_style(
                 colors,
                 *name == state.theme_name,
@@ -77,11 +75,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
         .width(Fill);
 
     if state.shortcuts_visible {
-        stack![
-            base,
-            shortcuts_overlay(state)
-        ]
-        .into()
+        stack![base, shortcuts_overlay(state)].into()
     } else {
         base.into()
     }
@@ -114,7 +108,9 @@ fn shortcuts_overlay(state: &State) -> Element<'_, Message> {
             text("c  config").size(fs).color(colors.fg),
             text("tab  next input").size(fs).color(colors.fg),
             text("shift+tab  previous input").size(fs).color(colors.fg),
-            text("enter  execute rpc (rpc tab)").size(fs).color(colors.fg),
+            text("enter  execute rpc (rpc tab)")
+                .size(fs)
+                .color(colors.fg),
             text("esc  close shortcuts").size(fs).color(colors.fg_dim),
         ]
         .spacing(6),

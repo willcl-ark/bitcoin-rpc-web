@@ -34,9 +34,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
     };
 
     let mut content = column![
-        text("CONNECTION MATRIX")
-            .size(fs + 10)
-            .color(colors.accent),
+        text("CONNECTION MATRIX").size(fs + 10).color(colors.accent),
         text("RPC, WALLET AND ZMQ RUNTIME SETTINGS")
             .size(fs.saturating_sub(2))
             .color(colors.fg_dim),
@@ -112,11 +110,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
         content = content.push(text(status).size(fs).color(colors.fg_dim));
     }
     if let Some(error) = &state.config.error {
-        content = content.push(
-            text(format!("ERR: {error}"))
-                .size(fs)
-                .color(colors.red),
-        );
+        content = content.push(text(format!("ERR: {error}")).size(fs).color(colors.red));
     }
 
     container(content.padding(24).spacing(10))

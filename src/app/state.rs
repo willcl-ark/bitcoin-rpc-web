@@ -6,11 +6,11 @@ use iced::widget::{pane_grid, text_input};
 
 use crate::app::update::validate_rpc_host;
 use crate::core::config_store::ConfigStore;
-use crate::ui::components::ColorTheme;
 use crate::core::dashboard_service::DashboardSnapshot;
 use crate::core::rpc_client::{MAX_ZMQ_BUFFER_LIMIT, MIN_ZMQ_BUFFER_LIMIT, RpcClient, RpcConfig};
 use crate::core::schema::SchemaIndex;
 use crate::music::{MusicRuntime, MusicSnapshot};
+use crate::ui::components::ColorTheme;
 use crate::zmq::{ZmqHandle, ZmqSharedState, start_zmq_subscriber, stop_zmq_subscriber};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -324,14 +324,12 @@ impl State {
                 last_refresh_at: None,
                 netinfo_level: 3,
                 request_gen: 0,
-                panes: pane_grid::State::with_configuration(
-                    pane_grid::Configuration::Split {
-                        axis: pane_grid::Axis::Horizontal,
-                        ratio: 0.76,
-                        a: Box::new(pane_grid::Configuration::Pane(DashboardPane::Main)),
-                        b: Box::new(pane_grid::Configuration::Pane(DashboardPane::Zmq)),
-                    },
-                ),
+                panes: pane_grid::State::with_configuration(pane_grid::Configuration::Split {
+                    axis: pane_grid::Axis::Horizontal,
+                    ratio: 0.76,
+                    a: Box::new(pane_grid::Configuration::Pane(DashboardPane::Main)),
+                    b: Box::new(pane_grid::Configuration::Pane(DashboardPane::Zmq)),
+                }),
             },
             zmq: ZmqViewState {
                 connected: false,

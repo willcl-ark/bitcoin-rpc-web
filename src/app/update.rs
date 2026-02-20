@@ -8,16 +8,15 @@ use crate::app::state::{ConfigForm, DashboardPartialSet, FocusField, State, Tab,
 use crate::core::config_store::ConfigStore;
 use crate::core::dashboard_service::{DashboardPartialUpdate, DashboardService, DashboardSnapshot};
 use crate::core::rpc_client::{
-    MAX_FONT_SIZE, MAX_ZMQ_BUFFER_LIMIT, MIN_FONT_SIZE, MIN_ZMQ_BUFFER_LIMIT, RpcClient,
-    RpcConfig, allow_insecure, is_safe_rpc_host,
+    MAX_FONT_SIZE, MAX_ZMQ_BUFFER_LIMIT, MIN_FONT_SIZE, MIN_ZMQ_BUFFER_LIMIT, RpcClient, RpcConfig,
+    allow_insecure, is_safe_rpc_host,
 };
 use crate::music::MusicRuntime;
 use crate::zmq::{start_zmq_subscriber, stop_zmq_subscriber};
 
 const ZMQ_REFRESH_DEBOUNCE_MS: u64 = 800;
 
-const UNSAFE_HOST_ERROR: &str =
-    "RPC URL must be localhost/private unless DANGER_INSECURE_RPC=1";
+const UNSAFE_HOST_ERROR: &str = "RPC URL must be localhost/private unless DANGER_INSECURE_RPC=1";
 
 pub fn validate_rpc_host(config: &RpcConfig) -> Result<(), String> {
     if is_safe_rpc_host(&config.url) || allow_insecure() {

@@ -1,4 +1,4 @@
-use iced::widget::{button, container, row, slider, text, Space};
+use iced::widget::{Space, button, container, row, slider, text};
 use iced::{Background, Border, Element, Fill, Shadow, Theme};
 
 use crate::app::message::Message;
@@ -13,10 +13,14 @@ pub fn view(state: &State) -> Element<'_, Message> {
     } else {
         "[SHOW NAV]"
     };
-    let sidebar_toggle = button(text(sidebar_label).size(fs.saturating_sub(3)).color(colors.fg))
-        .style(components::utility_button_style(colors, false))
-        .padding([2, 8])
-        .on_press(Message::SidebarTogglePressed);
+    let sidebar_toggle = button(
+        text(sidebar_label)
+            .size(fs.saturating_sub(3))
+            .color(colors.fg),
+    )
+    .style(components::utility_button_style(colors, false))
+    .padding([2, 8])
+    .on_press(Message::SidebarTogglePressed);
 
     let content: Element<'_, Message> = if let Some(_music) = &state.music {
         let snap = &state.music_snapshot;
