@@ -49,6 +49,7 @@ pub struct TrafficSummary {
 pub struct PeerSummary {
     pub id: i64,
     pub addr: String,
+    pub subver: String,
     pub inbound: bool,
     pub connection_type: String,
     pub ping_time: Option<f64>,
@@ -187,6 +188,7 @@ impl DashboardService {
             peer_summaries.push(PeerSummary {
                 id,
                 addr: string(peer_object, "addr").unwrap_or_else(|_| "?".to_string()),
+                subver: string(peer_object, "subver").unwrap_or_else(|_| "unknown".to_string()),
                 inbound: bool_field(peer_object, "inbound").unwrap_or(false),
                 connection_type: string(peer_object, "connection_type")
                     .unwrap_or_else(|_| "unknown".to_string()),

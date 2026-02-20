@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use iced::widget::{button, checkbox, column, container, row, scrollable, text, text_input};
 use iced::{Element, Fill};
 
@@ -7,21 +9,53 @@ use crate::ui::components;
 
 pub fn view(state: &State) -> Element<'_, Message> {
     let method_list = if let Some(schema) = &state.schema_index {
-        let methods = schema.search(&state.rpc_search);
-        let mut list = column![text("Methods").size(24).color(components::TEXT)].spacing(8);
-        for method in methods.iter().take(200) {
-            let selected = state.rpc_selected_method.as_deref() == Some(method.name.as_str());
-            let label = if selected {
-                format!("> {}", method.name)
-            } else {
-                method.name.clone()
-            };
+        let mut grouped: BTreeMap<String, Vec<_>> = BTreeMap::new();
+        for method in schema.search(&state.rpc_search).into_iter().take(400) {
+            grouped
+                .entry(method.category.clone())
+                .or_default()
+                .push(method);
+        }
+
+        let mut list = column![text("METHOD GROUPS").size(16).color(components::ACCENT)].spacing(6);
+
+        if grouped.is_empty() {
+            list = list.push(text("No methods match current search.").color(components::MUTED));
+        }
+
+        for (category, mut methods) in grouped {
+            methods.sort_by(|a, b| a.name.cmp(&b.name));
+            let collapsed = state.rpc_collapsed_categories.contains(&category);
+            let marker = if collapsed { "[+]" } else { "[-]" };
+            let category_label =
+                format!("{marker} {} ({})", category.to_uppercase(), methods.len());
             list = list.push(
-                button(text(label))
+                button(text(category_label))
                     .width(Fill)
-                    .style(components::nav_button_style(selected))
-                    .on_press(Message::RpcMethodSelected(method.name.clone())),
+                    .style(components::utility_button_style(!collapsed))
+                    .padding([4, 8])
+                    .on_press(Message::RpcCategoryToggled(category.clone())),
             );
+
+            if collapsed {
+                continue;
+            }
+
+            for method in methods {
+                let selected = state.rpc_selected_method.as_deref() == Some(method.name.as_str());
+                let label = if selected {
+                    format!("> {}", method.name)
+                } else {
+                    format!("  {}", method.name)
+                };
+                list = list.push(
+                    button(text(label))
+                        .width(Fill)
+                        .style(components::row_button_style(selected))
+                        .padding([4, 8])
+                        .on_press(Message::RpcMethodSelected(method.name.clone())),
+                );
+            }
         }
         scrollable(list).height(Fill)
     } else {
@@ -52,19 +86,24 @@ pub fn view(state: &State) -> Element<'_, Message> {
     };
 
     let mut right = column![
-        text("RPC Explorer").size(28).color(components::TEXT),
-        text("Search, inspect and execute methods directly.")
-            .size(14)
+        text("RPC EXECUTION CONSOLE")
+            .size(24)
+            .color(components::ACCENT),
+        text("SEARCH, INSPECT, EXECUTE")
+            .size(12)
             .color(components::MUTED),
         text_input("Search methods", &state.rpc_search)
             .on_input(Message::RpcSearchChanged)
-            .padding(8),
+            .padding(8)
+            .style(components::input_style()),
         text(format!(
             "Selected method: {}",
             state.rpc_selected_method.as_deref().unwrap_or("(none)")
         )),
         text(selected_summary).color(components::MUTED),
-        checkbox("Batch mode", state.rpc_batch_mode).on_toggle(Message::RpcBatchModeToggled),
+        checkbox("Batch mode", state.rpc_batch_mode)
+            .on_toggle(Message::RpcBatchModeToggled)
+            .style(components::checkbox_style()),
     ]
     .spacing(10);
 
@@ -75,30 +114,29 @@ pub fn view(state: &State) -> Element<'_, Message> {
                 &state.rpc_batch_input,
             )
             .on_input(Message::RpcBatchChanged)
-            .padding(8),
+            .padding(8)
+            .style(components::input_style()),
         );
     } else {
         right = right.push(text("Params JSON")).push(
             text_input("[]", &state.rpc_params_input)
                 .on_input(Message::RpcParamsChanged)
-                .padding(8),
+                .padding(8)
+                .style(components::input_style()),
         );
     }
 
     right = right.push(execute_button);
 
     if let Some(error) = &state.schema_error {
-        right = right.push(
-            text(format!("Schema error: {error}")).color(iced::Color::from_rgb(0.96, 0.58, 0.58)),
-        );
+        right = right.push(text(format!("Schema error: {error}")).color(components::ERROR_RED));
     }
     if let Some(error) = &state.rpc_error {
-        right = right
-            .push(text(format!("Error: {error}")).color(iced::Color::from_rgb(0.96, 0.58, 0.58)));
+        right = right.push(text(format!("ERR: {error}")).color(components::ERROR_RED));
     }
     if let Some(response) = &state.rpc_response {
         right = right
-            .push(text("Response").size(18).color(components::TEXT))
+            .push(text("RESPONSE").size(14).color(components::ACCENT))
             .push(
                 container(scrollable(text(response).size(14).color(components::MUTED)))
                     .style(components::card_style())

@@ -7,16 +7,17 @@ use crate::ui::components;
 
 pub fn view(state: &State) -> Element<'_, Message> {
     let nav = column![
-        text("Bitcoin RPC").size(28).color(components::TEXT),
-        text("Native desktop control plane")
-            .size(14)
-            .color(components::MUTED),
-        nav_button("Dashboard", Tab::Dashboard, state.active_tab),
+        text("BITCOIN RPC // MCU")
+            .size(21)
+            .color(components::ACCENT),
+        text("NODE CONTROL").size(11).color(components::MUTED),
+        text("SECTOR NAV").size(10).color(components::AMBER),
+        nav_button("DASHBOARD", Tab::Dashboard, state.active_tab),
         nav_button("RPC", Tab::Rpc, state.active_tab),
-        nav_button("Config", Tab::Config, state.active_tab),
+        nav_button("CONFIG", Tab::Config, state.active_tab),
     ]
-    .spacing(12)
-    .padding(20)
+    .spacing(8)
+    .padding(16)
     .width(180);
 
     let content = match state.active_tab {
@@ -29,7 +30,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
         row![
             container(nav)
                 .style(components::panel_style())
-                .width(230)
+                .width(250)
                 .height(Fill),
             content
         ]
@@ -45,9 +46,10 @@ pub fn view(state: &State) -> Element<'_, Message> {
 }
 
 fn nav_button(label: &'static str, tab: Tab, active_tab: Tab) -> Element<'static, Message> {
-    button(text(label))
+    button(text(format!("[{}]", label)))
         .width(Fill)
         .style(components::nav_button_style(tab == active_tab))
+        .padding([8, 10])
         .on_press(Message::SelectTab(tab))
         .into()
 }

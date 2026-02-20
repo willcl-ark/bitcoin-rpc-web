@@ -58,15 +58,9 @@ fn method_meta(method: &Value) -> Option<MethodMeta> {
     let name = method["name"].as_str()?.to_string();
     let summary = method["summary"].as_str().map(ToOwned::to_owned);
 
-    let category = method["tags"]
-        .as_array()
-        .and_then(|tags| tags.first())
-        .and_then(|tag| {
-            tag["name"]
-                .as_str()
-                .map(ToOwned::to_owned)
-                .or_else(|| tag.as_str().map(ToOwned::to_owned))
-        })
+    let category = method["x-bitcoin-category"]
+        .as_str()
+        .map(ToOwned::to_owned)
         .unwrap_or_else(|| "uncategorized".to_string());
 
     Some(MethodMeta {

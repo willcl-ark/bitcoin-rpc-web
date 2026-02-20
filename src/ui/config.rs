@@ -32,38 +32,46 @@ pub fn view(state: &State) -> Element<'_, Message> {
     };
 
     let mut content = column![
-        text("Connection Config").size(28).color(components::TEXT),
-        text("Tune RPC, wallet and ZMQ runtime settings.")
-            .size(14)
+        text("CONNECTION MATRIX").size(24).color(components::ACCENT),
+        text("RPC, WALLET AND ZMQ RUNTIME SETTINGS")
+            .size(12)
             .color(components::MUTED),
         text("RPC URL"),
         text_input("http://127.0.0.1:8332", &form.url)
             .on_input(Message::ConfigUrlChanged)
-            .padding(8),
+            .padding(8)
+            .style(components::input_style()),
         text("RPC User"),
         text_input("rpcuser", &form.user)
             .on_input(Message::ConfigUserChanged)
-            .padding(8),
+            .padding(8)
+            .style(components::input_style()),
         text("RPC Password"),
         text_input("rpcpassword", &form.password)
             .on_input(Message::ConfigPasswordChanged)
-            .padding(8),
+            .secure(true)
+            .padding(8)
+            .style(components::input_style()),
         text("Wallet (optional)"),
         text_input("wallet name", &form.wallet)
             .on_input(Message::ConfigWalletChanged)
-            .padding(8),
+            .padding(8)
+            .style(components::input_style()),
         text("Poll Interval (seconds)"),
         text_input("5", &form.poll_interval_secs)
             .on_input(Message::ConfigPollIntervalChanged)
-            .padding(8),
+            .padding(8)
+            .style(components::input_style()),
         text("ZMQ Address (optional)"),
         text_input("tcp://127.0.0.1:28332", &form.zmq_address)
             .on_input(Message::ConfigZmqAddressChanged)
-            .padding(8),
+            .padding(8)
+            .style(components::input_style()),
         text("ZMQ Buffer Limit"),
         text_input("5000", &form.zmq_buffer_limit)
             .on_input(Message::ConfigZmqBufferLimitChanged)
-            .padding(8),
+            .padding(8)
+            .style(components::input_style()),
         row![connect_button, save_button, reload_button].spacing(12),
     ]
     .spacing(8)
@@ -73,17 +81,13 @@ pub fn view(state: &State) -> Element<'_, Message> {
         content = content.push(text(format!("Config file: {path}")).color(components::MUTED));
     }
     if let Some(error) = &state.config_store_error {
-        content = content.push(
-            text(format!("Config store error: {error}"))
-                .color(iced::Color::from_rgb(0.96, 0.58, 0.58)),
-        );
+        content = content.push(text(format!("Config error: {error}")).color(components::ERROR_RED));
     }
     if let Some(status) = &state.config_status {
         content = content.push(text(status).color(components::MUTED));
     }
     if let Some(error) = &state.config_error {
-        content = content
-            .push(text(format!("Error: {error}")).color(iced::Color::from_rgb(0.96, 0.58, 0.58)));
+        content = content.push(text(format!("ERR: {error}")).color(components::ERROR_RED));
     }
 
     container(content.padding(24).spacing(10))

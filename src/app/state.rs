@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -79,6 +80,7 @@ pub struct State {
     pub schema_index: Option<SchemaIndex>,
     pub schema_error: Option<String>,
     pub rpc_search: String,
+    pub rpc_collapsed_categories: BTreeSet<String>,
     pub rpc_selected_method: Option<String>,
     pub rpc_params_input: String,
     pub rpc_batch_mode: bool,
@@ -137,6 +139,16 @@ impl State {
             Ok(index) => (Some(index), None),
             Err(error) => (None, Some(error)),
         };
+        let rpc_collapsed_categories = schema_index
+            .as_ref()
+            .map(|schema| {
+                schema
+                    .methods()
+                    .iter()
+                    .map(|method| method.category.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
 
         let mut state = Self {
             active_tab: Tab::default(),
@@ -155,6 +167,7 @@ impl State {
             schema_index,
             schema_error,
             rpc_search: String::new(),
+            rpc_collapsed_categories,
             rpc_selected_method: Some("getblockchaininfo".to_string()),
             rpc_params_input: "[]".to_string(),
             rpc_batch_mode: false,

@@ -169,6 +169,11 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
         Message::RpcSearchChanged(value) => {
             state.rpc_search = value;
         }
+        Message::RpcCategoryToggled(category) => {
+            if !state.rpc_collapsed_categories.remove(&category) {
+                state.rpc_collapsed_categories.insert(category);
+            }
+        }
         Message::RpcMethodSelected(method) => {
             state.rpc_selected_method = Some(method);
             state.rpc_error = None;

@@ -19,6 +19,7 @@ pub enum Message {
     ConfigSavePressed,
     ConfigSaveFinished(Result<RpcConfig, String>),
     RpcSearchChanged(String),
+    RpcCategoryToggled(String),
     RpcMethodSelected(String),
     RpcParamsChanged(String),
     RpcBatchModeToggled(bool),
