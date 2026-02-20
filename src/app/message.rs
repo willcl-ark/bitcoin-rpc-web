@@ -15,6 +15,18 @@ pub enum KeyboardShortcut {
     ExecuteRpc,
 }
 
+impl KeyboardShortcut {
+    pub fn is_character_shortcut(self) -> bool {
+        matches!(
+            self,
+            Self::ToggleHelp
+                | Self::SwitchToDashboard
+                | Self::SwitchToRpc
+                | Self::SwitchToConfig
+        )
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Message {
     ThemeChanged(ThemeName),

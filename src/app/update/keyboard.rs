@@ -7,6 +7,10 @@ use crate::app::state::{FocusField, State, Tab};
 use super::rpc::handle_rpc;
 
 pub fn handle_keyboard_shortcut(state: &mut State, shortcut: KeyboardShortcut) -> Task<Message> {
+    if state.focused_input.is_some() && shortcut.is_character_shortcut() {
+        return Task::none();
+    }
+
     match shortcut {
         KeyboardShortcut::ToggleHelp => {
             state.shortcuts_visible = !state.shortcuts_visible;
