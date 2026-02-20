@@ -210,7 +210,6 @@ pub fn panel_style(colors: &ColorTheme) -> impl Fn(&Theme) -> container::Style +
         },
         shadow: Shadow::default(),
         text_color: Some(fg),
-        ..container::Style::default()
     }
 }
 

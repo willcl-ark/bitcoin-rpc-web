@@ -97,6 +97,5 @@ fn bar_style(colors: &ColorTheme) -> impl Fn(&Theme) -> container::Style + 'stat
         },
         text_color: Some(fg),
         shadow: Shadow::default(),
-        ..container::Style::default()
     }
 }
