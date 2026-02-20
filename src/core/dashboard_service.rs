@@ -50,9 +50,25 @@ pub struct PeerSummary {
     pub id: i64,
     pub addr: String,
     pub subver: String,
+    pub network: String,
+    pub services: String,
+    pub transport_version: u8,
     pub inbound: bool,
     pub connection_type: String,
+    pub min_ping: Option<f64>,
     pub ping_time: Option<f64>,
+    pub last_send: i64,
+    pub last_recv: i64,
+    pub last_transaction: i64,
+    pub last_block: i64,
+    pub conn_time: i64,
+    pub is_tx_relay: bool,
+    pub is_bip152_hb_to: bool,
+    pub is_bip152_hb_from: bool,
+    pub addr_processed: i64,
+    pub addr_rate_limited: i64,
+    pub is_addr_relay_enabled: bool,
+    pub version: i64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -185,14 +201,47 @@ impl DashboardService {
                 continue;
             };
 
+            let transport_version = peer_object
+                .get("transport_protocol_type")
+                .and_then(Value::as_u64)
+                .unwrap_or(1) as u8;
+
             peer_summaries.push(PeerSummary {
                 id,
                 addr: string(peer_object, "addr").unwrap_or_else(|_| "?".to_string()),
-                subver: string(peer_object, "subver").unwrap_or_else(|_| "unknown".to_string()),
+                subver: string(peer_object, "subver").unwrap_or_else(|_| String::new()),
+                network: string(peer_object, "network").unwrap_or_else(|_| String::new()),
+                services: format_services(peer_object.get("servicesnames")),
+                transport_version,
                 inbound: field(peer_object, "inbound", Value::as_bool, "bool").unwrap_or(false),
                 connection_type: string(peer_object, "connection_type")
                     .unwrap_or_else(|_| "unknown".to_string()),
+                min_ping: peer_object.get("minping").and_then(Value::as_f64),
                 ping_time: peer_object.get("pingtime").and_then(Value::as_f64),
+                last_send: field(peer_object, "lastsend", Value::as_i64, "i64").unwrap_or(0),
+                last_recv: field(peer_object, "lastrecv", Value::as_i64, "i64").unwrap_or(0),
+                last_transaction: field(peer_object, "last_transaction", Value::as_i64, "i64")
+                    .unwrap_or(0),
+                last_block: field(peer_object, "last_block", Value::as_i64, "i64").unwrap_or(0),
+                conn_time: field(peer_object, "conntime", Value::as_i64, "i64").unwrap_or(0),
+                is_tx_relay: field(peer_object, "relaytxes", Value::as_bool, "bool")
+                    .unwrap_or(false),
+                is_bip152_hb_to: field(peer_object, "bip152_hb_to", Value::as_bool, "bool")
+                    .unwrap_or(false),
+                is_bip152_hb_from: field(peer_object, "bip152_hb_from", Value::as_bool, "bool")
+                    .unwrap_or(false),
+                addr_processed: field(peer_object, "addr_processed", Value::as_i64, "i64")
+                    .unwrap_or(0),
+                addr_rate_limited: field(peer_object, "addr_rate_limited", Value::as_i64, "i64")
+                    .unwrap_or(0),
+                is_addr_relay_enabled: field(
+                    peer_object,
+                    "addr_relay_enabled",
+                    Value::as_bool,
+                    "bool",
+                )
+                .unwrap_or(false),
+                version: field(peer_object, "version", Value::as_i64, "i64").unwrap_or(0),
             });
             peer_details.insert(id, peer.clone());
         }
@@ -207,6 +256,20 @@ impl DashboardService {
             uptime_secs,
         })
     }
+}
+
+fn format_services(servicesnames: Option<&Value>) -> String {
+    let Some(arr) = servicesnames.and_then(Value::as_array) else {
+        return String::new();
+    };
+    arr.iter()
+        .filter_map(Value::as_str)
+        .map(|name| match name {
+            "NETWORK_LIMITED" => 'l',
+            "P2P_V2" => '2',
+            other => other.chars().next().unwrap_or('?').to_ascii_lowercase(),
+        })
+        .collect()
 }
 
 fn parse_chain(value: &Value) -> Result<ChainSummary, RpcError> {
@@ -281,9 +344,26 @@ mod tests {
                 {
                     "id": 1,
                     "addr": "127.0.0.1:18444",
+                    "subver": "/Satoshi:28.0.0/",
+                    "network": "ipv4",
+                    "servicesnames": ["NETWORK", "WITNESS", "NETWORK_LIMITED", "P2P_V2"],
+                    "transport_protocol_type": 2,
                     "inbound": true,
                     "connection_type": "manual",
-                    "pingtime": 0.001
+                    "minping": 0.0005,
+                    "pingtime": 0.001,
+                    "lastsend": 1700000100,
+                    "lastrecv": 1700000200,
+                    "last_transaction": 1700000050,
+                    "last_block": 1700000000,
+                    "conntime": 1699999000,
+                    "relaytxes": true,
+                    "bip152_hb_to": false,
+                    "bip152_hb_from": true,
+                    "addr_processed": 42,
+                    "addr_rate_limited": 3,
+                    "addr_relay_enabled": true,
+                    "version": 70016
                 }
             ]),
             serde_json::json!(123),
@@ -305,6 +385,12 @@ mod tests {
         assert_eq!(snapshot.uptime_secs, 123);
         assert_eq!(snapshot.peers.len(), 1);
         assert_eq!(snapshot.peers[0].connection_type, "manual");
+        assert_eq!(snapshot.peers[0].network, "ipv4");
+        assert_eq!(snapshot.peers[0].services, "nwl2");
+        assert_eq!(snapshot.peers[0].transport_version, 2);
+        assert_eq!(snapshot.peers[0].version, 70016);
+        assert!(snapshot.peers[0].is_bip152_hb_from);
+        assert!(!snapshot.peers[0].is_bip152_hb_to);
         assert!(snapshot.peer_details.contains_key(&1));
     }
 

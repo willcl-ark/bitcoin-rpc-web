@@ -1,3 +1,5 @@
+use std::time::SystemTime;
+
 use chrono::{DateTime, Utc};
 use iced::widget::{button, column, container, horizontal_space, row, scrollable, text};
 use iced::{Color, Element, Fill};
@@ -206,63 +208,150 @@ pub fn view(state: &State) -> Element<'_, Message> {
 }
 
 fn peer_table(state: &State) -> Element<'_, Message> {
-    let header = row![
-        sort_header(state, "ID", PeerSortField::Id).width(iced::Length::FillPortion(1)),
-        sort_header(state, "Address", PeerSortField::Address).width(iced::Length::FillPortion(3)),
-        sort_header(state, "Subver", PeerSortField::Subversion).width(iced::Length::FillPortion(3)),
-        sort_header(state, "Dir", PeerSortField::Direction).width(iced::Length::FillPortion(1)),
-        sort_header(state, "Type", PeerSortField::ConnectionType)
-            .width(iced::Length::FillPortion(2)),
-        sort_header(state, "Ping", PeerSortField::Ping).width(iced::Length::FillPortion(1)),
-    ]
-    .spacing(4);
+    let level = state.dashboard.netinfo_level;
 
-    let mut rows = column![text("PEERS").size(15).color(components::ACCENT), header].spacing(2);
+    macro_rules! cell {
+        ($content:expr, $w:expr) => {
+            text(($content).to_string())
+                .size(14)
+                .width(iced::Length::Fixed($w))
+                .wrapping(Wrapping::None)
+        };
+    }
+
+    let mut level_btns = row![text("PEERS").size(15).color(components::ACCENT)]
+        .spacing(6)
+        .align_y(alignment::Vertical::Center);
+    for i in 0..=4u8 {
+        level_btns = level_btns.push(
+            button(
+                text(i.to_string()).size(14).color(if i == level {
+                    components::ACCENT
+                } else {
+                    components::MUTED
+                }),
+            )
+            .style(components::utility_button_style(i == level))
+            .padding([1, 6])
+            .on_press(Message::NetinfoLevelChanged(i)),
+        );
+    }
+
+    let mut content = column![level_btns].spacing(2);
 
     if let Some(snapshot) = &state.dashboard.snapshot {
-        let subver_scale = subversion_major_scale(&snapshot.peers);
-        for peer in sorted_peers(state, &snapshot.peers) {
-            let selected = state.dashboard.selected_peer_id == Some(peer.id);
-            let ping = peer
-                .ping_time
-                .map(|v| format!("{v:.3}s"))
-                .unwrap_or_else(|| "-".to_string());
-            let ping_color = ping_color(peer.ping_time);
-            let connection_type_color = connection_type_color(&peer.connection_type);
-            let subver_color = subversion_color(&peer.subver, &subver_scale);
+        if level >= 1 {
+            let now = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .map(|d: std::time::Duration| d.as_secs() as i64)
+                .unwrap_or(0);
 
-            let row_line = row![
-                text(peer.id.to_string()).width(iced::Length::FillPortion(1)),
-                text(peer.addr.clone()).width(iced::Length::FillPortion(3)),
-                text(peer.subver.clone())
-                    .color(subver_color)
-                    .width(iced::Length::FillPortion(3)),
-                text(if peer.inbound { "IN" } else { "OUT" })
-                    .color(if peer.inbound {
-                        components::AMBER
-                    } else {
-                        components::ACCENT_ALT
-                    })
-                    .width(iced::Length::FillPortion(1)),
-                text(peer.connection_type.clone())
-                    .color(connection_type_color)
-                    .width(iced::Length::FillPortion(2)),
-                text(ping)
-                    .color(ping_color)
-                    .width(iced::Length::FillPortion(1)),
-            ]
-            .spacing(4);
+            let mut header = row![].spacing(2);
+            header = header
+                .push(sort_header(state, "<->", PeerSortField::Direction).width(iced::Length::Fixed(35.0)))
+                .push(sort_header(state, "type", PeerSortField::ConnectionType).width(iced::Length::Fixed(65.0)))
+                .push(sort_header(state, "net", PeerSortField::Network).width(iced::Length::Fixed(55.0)))
+                .push(cell!("serv", 60.0).color(components::MUTED))
+                .push(cell!("v", 22.0).color(components::MUTED))
+                .push(sort_header(state, "mping", PeerSortField::MinPing).width(iced::Length::Fixed(60.0)))
+                .push(sort_header(state, "ping", PeerSortField::Ping).width(iced::Length::Fixed(60.0)))
+                .push(cell!("send", 50.0).color(components::MUTED))
+                .push(cell!("recv", 50.0).color(components::MUTED))
+                .push(cell!("txn", 45.0).color(components::MUTED))
+                .push(cell!("blk", 45.0).color(components::MUTED))
+                .push(cell!("hb", 28.0).color(components::MUTED))
+                .push(cell!("addrp", 55.0).color(components::MUTED))
+                .push(cell!("addrl", 50.0).color(components::MUTED))
+                .push(sort_header(state, "age", PeerSortField::Age).width(iced::Length::Fixed(50.0)))
+                .push(sort_header(state, "id", PeerSortField::Id).width(iced::Length::Fixed(38.0)));
+            if level == 2 || level == 4 {
+                header = header.push(
+                    sort_header(state, "address", PeerSortField::Address).width(Fill),
+                );
+            }
+            if level == 3 || level == 4 {
+                header = header.push(
+                    sort_header(state, "version", PeerSortField::Version).width(Fill),
+                );
+            }
+            content = content.push(header);
 
-            rows = rows.push(
-                button(row_line)
-                    .width(Fill)
-                    .style(components::row_button_style(selected))
-                    .padding([1, 4])
-                    .on_press(Message::DashboardPeerSelected(peer.id)),
-            );
+            for peer in sorted_peers(state, &snapshot.peers) {
+                let selected = state.dashboard.selected_peer_id == Some(peer.id);
+                let type_short = connection_type_short(&peer.connection_type);
+                let type_color = connection_type_color(&peer.connection_type);
+                let dir_color = if peer.inbound {
+                    components::AMBER
+                } else {
+                    components::ACCENT_ALT
+                };
+                let hb = match (peer.is_bip152_hb_to, peer.is_bip152_hb_from) {
+                    (true, true) => "tf",
+                    (true, false) => "t.",
+                    (false, true) => ".f",
+                    (false, false) => "..",
+                };
+                let txn = if !peer.is_tx_relay {
+                    "*".to_string()
+                } else {
+                    relative_mins(now, peer.last_transaction)
+                };
+                let addrp = if !peer.is_addr_relay_enabled {
+                    ".".to_string()
+                } else {
+                    peer.addr_processed.to_string()
+                };
+                let addrl = if peer.addr_rate_limited > 0 {
+                    peer.addr_rate_limited.to_string()
+                } else {
+                    String::new()
+                };
+
+                let mut data_row = row![].spacing(2);
+                data_row = data_row
+                    .push(cell!(if peer.inbound { "in" } else { "out" }, 35.0).color(dir_color))
+                    .push(cell!(type_short, 65.0).color(type_color))
+                    .push(cell!(&peer.network, 55.0))
+                    .push(cell!(&peer.services, 60.0))
+                    .push(cell!(peer.transport_version, 22.0))
+                    .push(cell!(ping_ms_string(peer.min_ping), 60.0).color(ping_color(peer.min_ping)))
+                    .push(cell!(ping_ms_string(peer.ping_time), 60.0).color(ping_color(peer.ping_time)))
+                    .push(cell!(relative_secs(now, peer.last_send), 50.0))
+                    .push(cell!(relative_secs(now, peer.last_recv), 50.0))
+                    .push(cell!(txn, 45.0))
+                    .push(cell!(relative_mins(now, peer.last_block), 45.0))
+                    .push(cell!(hb, 28.0))
+                    .push(cell!(addrp, 55.0))
+                    .push(cell!(addrl, 50.0))
+                    .push(cell!(relative_mins(now, peer.conn_time), 50.0))
+                    .push(cell!(peer.id, 38.0));
+                if level == 2 || level == 4 {
+                    data_row = data_row.push(
+                        text(peer.addr.clone()).size(14).width(Fill).wrapping(Wrapping::None),
+                    );
+                }
+                if level == 3 || level == 4 {
+                    data_row = data_row.push(
+                        text(format!("{}{}", peer.version, peer.subver))
+                            .size(14)
+                            .width(Fill)
+                            .wrapping(Wrapping::None),
+                    );
+                }
+
+                content = content.push(
+                    button(data_row)
+                        .width(Fill)
+                        .style(components::row_button_style(selected))
+                        .padding([1, 4])
+                        .on_press(Message::DashboardPeerSelected(peer.id)),
+                );
+            }
         }
+
+        content = content.push(connection_counts(&snapshot.peers));
     } else {
-        rows = rows.push(text("No peer data").color(components::MUTED));
+        content = content.push(text("No peer data").color(components::MUTED));
     }
 
     let detail_panel = if let Some(snapshot) = &state.dashboard.snapshot
@@ -293,7 +382,7 @@ fn peer_table(state: &State) -> Element<'_, Message> {
         None
     };
 
-    let table = scrollable(rows).height(Fill);
+    let table = scrollable(content).height(Fill);
     if let Some(detail) = detail_panel {
         column![table, detail].spacing(6).into()
     } else {
@@ -341,7 +430,7 @@ fn sort_header<'a>(
     } else {
         ""
     };
-    button(text(format!("{label}{marker}")).size(11).color(if active {
+    button(text(format!("{label}{marker}")).size(14).color(if active {
         components::ACCENT
     } else {
         components::MUTED
@@ -353,21 +442,34 @@ fn sort_header<'a>(
 
 fn sorted_peers<'a>(state: &State, peers: &'a [PeerSummary]) -> Vec<&'a PeerSummary> {
     let mut sorted: Vec<&PeerSummary> = peers.iter().collect();
-    sorted.sort_by(|a, b| match state.dashboard.peer_sort {
-        PeerSortField::Id => a.id.cmp(&b.id),
-        PeerSortField::Address => a.addr.cmp(&b.addr),
-        PeerSortField::Subversion => a.subver.cmp(&b.subver),
-        PeerSortField::Direction => a.inbound.cmp(&b.inbound),
-        PeerSortField::ConnectionType => a.connection_type.cmp(&b.connection_type),
-        PeerSortField::Ping => {
-            let ap = a.ping_time.unwrap_or(f64::INFINITY);
-            let bp = b.ping_time.unwrap_or(f64::INFINITY);
-            ap.partial_cmp(&bp).unwrap_or(std::cmp::Ordering::Equal)
+    sorted.sort_by(|a, b| {
+        let cmp = match state.dashboard.peer_sort {
+            PeerSortField::Id => a.id.cmp(&b.id),
+            PeerSortField::Direction => a.inbound.cmp(&b.inbound),
+            PeerSortField::ConnectionType => a.connection_type.cmp(&b.connection_type),
+            PeerSortField::Network => a.network.cmp(&b.network),
+            PeerSortField::MinPing => {
+                let ap = a.min_ping.unwrap_or(f64::INFINITY);
+                let bp = b.min_ping.unwrap_or(f64::INFINITY);
+                a.inbound
+                    .cmp(&b.inbound)
+                    .then(ap.partial_cmp(&bp).unwrap_or(std::cmp::Ordering::Equal))
+            }
+            PeerSortField::Ping => {
+                let ap = a.ping_time.unwrap_or(f64::INFINITY);
+                let bp = b.ping_time.unwrap_or(f64::INFINITY);
+                ap.partial_cmp(&bp).unwrap_or(std::cmp::Ordering::Equal)
+            }
+            PeerSortField::Age => a.conn_time.cmp(&b.conn_time),
+            PeerSortField::Address => a.addr.cmp(&b.addr),
+            PeerSortField::Version => a.version.cmp(&b.version),
+        };
+        if state.dashboard.peer_sort_desc {
+            cmp.reverse()
+        } else {
+            cmp
         }
     });
-    if state.dashboard.peer_sort_desc {
-        sorted.reverse();
-    }
     sorted
 }
 
@@ -503,79 +605,166 @@ fn compact_value(value: &Value) -> String {
     }
 }
 
+fn connection_type_short(kind: &str) -> &str {
+    match kind {
+        "outbound-full-relay" => "full",
+        "block-relay-only" => "block",
+        "addr-fetch" => "addr",
+        "inbound" => "in",
+        _ => kind,
+    }
+}
+
 fn connection_type_color(kind: &str) -> Color {
-    match kind.to_ascii_lowercase().as_str() {
-        "inbound" => Color::from_rgb(0.30, 0.84, 1.0),
-        "manual" => Color::from_rgb(0.96, 0.79, 0.27),
-        "feeler" => Color::from_rgb(0.63, 0.83, 1.0),
+    match kind {
         "outbound-full-relay" => components::GREEN,
         "block-relay-only" => Color::from_rgb(0.45, 0.76, 0.98),
+        "manual" => Color::from_rgb(0.96, 0.79, 0.27),
+        "feeler" => Color::from_rgb(0.63, 0.83, 1.0),
         "addr-fetch" => Color::from_rgb(0.96, 0.70, 0.20),
-        "private-broadcast" => Color::from_rgb(0.97, 0.54, 0.26),
+        "inbound" => Color::from_rgb(0.30, 0.84, 1.0),
         _ => components::TEXT,
     }
 }
 
-fn subversion_major_scale(peers: &[PeerSummary]) -> Vec<i64> {
-    let mut versions = peers
-        .iter()
-        .filter_map(|peer| extract_subversion_major(&peer.subver))
-        .collect::<Vec<_>>();
-    versions.sort_unstable();
-    versions.dedup();
-    versions
-}
-
-fn extract_subversion_major(subver: &str) -> Option<i64> {
-    let (_, after_colon) = subver.split_once(':')?;
-    let major = after_colon
-        .trim_start_matches('/')
-        .split('.')
-        .next()
+fn ping_ms_string(secs: Option<f64>) -> String {
+    secs.map(|s| format!("{:.0}", s * 1000.0))
         .unwrap_or_default()
-        .trim_matches('/');
-    major.parse::<i64>().ok()
 }
 
-fn subversion_color(subver: &str, scale: &[i64]) -> Color {
-    let Some(major) = extract_subversion_major(subver) else {
-        return components::TEXT;
-    };
-    let Some(idx) = scale.iter().position(|v| *v == major) else {
-        return components::TEXT;
+fn relative_secs(now: i64, ts: i64) -> String {
+    if ts == 0 {
+        return String::new();
+    }
+    (now - ts).to_string()
+}
+
+fn relative_mins(now: i64, ts: i64) -> String {
+    if ts == 0 {
+        return String::new();
+    }
+    ((now - ts) / 60).to_string()
+}
+
+fn connection_counts<'a>(peers: &[PeerSummary]) -> Element<'a, Message> {
+    let known_nets = ["ipv4", "ipv6", "onion", "i2p", "cjdns"];
+    let active_nets: Vec<&str> = known_nets
+        .iter()
+        .copied()
+        .filter(|net| peers.iter().any(|p| p.network == *net))
+        .collect();
+
+    let w_label: f32 = 60.0;
+    let w_col: f32 = 55.0;
+
+    let count = |net: &str, inbound: Option<bool>| -> usize {
+        peers
+            .iter()
+            .filter(|p| p.network == net && inbound.is_none_or(|ib| p.inbound == ib))
+            .count()
     };
 
-    if scale.len() <= 1 {
-        return components::ACCENT_ALT;
+    let mut header = row![].spacing(2);
+    header = header.push(text("").width(iced::Length::Fixed(w_label)));
+    for net in &active_nets {
+        header = header.push(
+            text(*net)
+                .size(14)
+                .color(components::MUTED)
+                .width(iced::Length::Fixed(w_col))
+                .align_x(alignment::Horizontal::Right),
+        );
+    }
+    header = header
+        .push(
+            text("total")
+                .size(14)
+                .color(components::MUTED)
+                .width(iced::Length::Fixed(w_col))
+                .align_x(alignment::Horizontal::Right),
+        )
+        .push(
+            text("block")
+                .size(14)
+                .color(components::MUTED)
+                .width(iced::Length::Fixed(w_col))
+                .align_x(alignment::Horizontal::Right),
+        );
+
+    let mut grid = column![header].spacing(1);
+
+    for (label, dir) in [("in", Some(true)), ("out", Some(false)), ("total", None)] {
+        let mut r = row![].spacing(2);
+        r = r.push(
+            text(label)
+                .size(14)
+                .color(components::MUTED)
+                .width(iced::Length::Fixed(w_label)),
+        );
+        let mut total = 0usize;
+        for net in &active_nets {
+            let c = count(net, dir);
+            total += c;
+            r = r.push(
+                text(c.to_string())
+                    .size(14)
+                    .color(components::TEXT)
+                    .width(iced::Length::Fixed(w_col))
+                    .align_x(alignment::Horizontal::Right),
+            );
+        }
+        r = r.push(
+            text(total.to_string())
+                .size(14)
+                .color(components::TEXT)
+                .width(iced::Length::Fixed(w_col))
+                .align_x(alignment::Horizontal::Right),
+        );
+        let bc = if label == "out" {
+            peers
+                .iter()
+                .filter(|p| p.connection_type == "block-relay-only" && !p.inbound)
+                .count()
+        } else {
+            0
+        };
+        r = r.push(
+            text(if bc > 0 {
+                bc.to_string()
+            } else {
+                String::new()
+            })
+            .size(14)
+            .color(components::TEXT)
+            .width(iced::Length::Fixed(w_col))
+            .align_x(alignment::Horizontal::Right),
+        );
+        grid = grid.push(r);
     }
 
-    let red = components::ERROR_RED;
-    let orange = components::AMBER;
-    let green = components::GREEN;
-    let t = idx as f32 / (scale.len() - 1) as f32;
-
-    if t <= 0.5 {
-        lerp_color(red, orange, t * 2.0)
-    } else {
-        lerp_color(orange, green, (t - 0.5) * 2.0)
-    }
+    grid.into()
 }
 
 fn ping_color(ping_secs: Option<f64>) -> Color {
     let Some(ping) = ping_secs else {
         return components::MUTED;
     };
-
-    let green = components::GREEN;
-    let orange = components::AMBER;
-    let red = components::ERROR_RED;
-
-    if ping <= 2.0 {
-        lerp_color(green, orange, (ping / 2.0) as f32)
-    } else if ping < 5.0 {
-        lerp_color(orange, red, ((ping - 2.0) / 3.0) as f32)
+    if ping <= 0.1 {
+        components::GREEN
+    } else if ping <= 0.5 {
+        lerp_color(
+            components::GREEN,
+            components::AMBER,
+            ((ping - 0.1) / 0.4) as f32,
+        )
+    } else if ping <= 1.0 {
+        lerp_color(
+            components::AMBER,
+            components::ERROR_RED,
+            ((ping - 0.5) / 0.5) as f32,
+        )
     } else {
-        red
+        components::ERROR_RED
     }
 }
 

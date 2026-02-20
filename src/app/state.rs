@@ -25,13 +25,16 @@ pub enum DashboardPartialSet {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PeerSortField {
-    #[default]
     Id,
-    Address,
-    Subversion,
     Direction,
     ConnectionType,
+    Network,
+    #[default]
+    MinPing,
     Ping,
+    Age,
+    Address,
+    Version,
 }
 
 #[derive(Debug, Clone)]
@@ -102,6 +105,7 @@ pub struct DashboardState {
     pub peer_sort_desc: bool,
     pub pending_partial: Option<DashboardPartialSet>,
     pub last_refresh_at: Option<Instant>,
+    pub netinfo_level: u8,
 }
 
 pub struct ZmqViewState {
@@ -211,6 +215,7 @@ impl State {
                 peer_sort_desc: false,
                 pending_partial: None,
                 last_refresh_at: None,
+                netinfo_level: 3,
             },
             zmq: ZmqViewState {
                 connected: false,

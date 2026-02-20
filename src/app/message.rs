@@ -31,6 +31,7 @@ pub enum Message {
     DashboardPeerSelected(i64),
     DashboardPeerDetailClosed,
     DashboardPeerSortPressed(PeerSortField),
+    NetinfoLevelChanged(u8),
     DashboardPartialRefreshRequested(DashboardPartialSet),
     DashboardPartialLoaded(Result<DashboardPartialUpdate, String>),
     ZmqPollTick,

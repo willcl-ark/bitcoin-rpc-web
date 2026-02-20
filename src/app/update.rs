@@ -50,6 +50,7 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
         | Message::DashboardPeerSelected(..)
         | Message::DashboardPeerDetailClosed
         | Message::DashboardPeerSortPressed(..)
+        | Message::NetinfoLevelChanged(..)
         | Message::DashboardPartialRefreshRequested(..)
         | Message::DashboardPartialLoaded(..) => handle_dashboard(state, message),
 
@@ -337,6 +338,9 @@ fn handle_dashboard(state: &mut State, message: Message) -> Task<Message> {
                 state.dashboard.peer_sort = field;
                 state.dashboard.peer_sort_desc = false;
             }
+        }
+        Message::NetinfoLevelChanged(level) => {
+            state.dashboard.netinfo_level = level.min(4);
         }
         Message::DashboardPartialRefreshRequested(partial) => {
             if state.dashboard.in_flight {
