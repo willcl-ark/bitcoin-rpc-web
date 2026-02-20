@@ -40,19 +40,26 @@
             inherit src;
             nativeBuildInputs = [
               pkgs.pkg-config
-            ]
-            ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
-              pkgs.wrapGAppsHook3
             ];
             buildInputs = [
               pkgs.openssl
               pkgs.zeromq
             ]
             ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
-              pkgs.webkitgtk_4_1
-              pkgs.gtk3
-              pkgs.glib
-              pkgs.libsoup_3
+              pkgs.expat
+              pkgs.fontconfig
+              pkgs.freetype
+              pkgs.freetype.dev
+              pkgs.wayland
+              pkgs.libxkbcommon
+              # Uncomment for X11 fallback support:
+              # pkgs.xorg.libX11
+              # pkgs.xorg.libXcursor
+              # pkgs.xorg.libXi
+              # pkgs.xorg.libXrandr
+              pkgs.vulkan-loader
+              # Uncomment if you want non-Vulkan GL path support:
+              # pkgs.libGL
               pkgs.alsa-lib
             ]
             ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
@@ -83,12 +90,21 @@
               zeromq
             ]
             ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
-              webkitgtk_4_1
-              gtk3
-              glib
-              libsoup_3
+              expat
+              fontconfig
+              freetype
+              freetype.dev
+              wayland
+              libxkbcommon
+              # Uncomment for X11 fallback support:
+              # xorg.libX11
+              # xorg.libXcursor
+              # xorg.libXi
+              # xorg.libXrandr
+              vulkan-loader
+              # Uncomment if you want non-Vulkan GL path support:
+              # libGL
               alsa-lib
-              glib-networking
             ]
             ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
               darwin.apple_sdk.frameworks.Security
@@ -98,11 +114,37 @@
             RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";
           }
           // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
-            GIO_EXTRA_MODULES = "${pkgs.glib-networking}/lib/gio/modules";
-            XDG_DATA_DIRS = pkgs.lib.makeSearchPath "share" [
-              pkgs.gtk3
-              pkgs.gsettings-desktop-schemas
-              pkgs.hicolor-icon-theme
+            RUSTFLAGS = "-C link-arg=-Wl,-rpath,${pkgs.lib.makeLibraryPath [
+              pkgs.expat
+              pkgs.fontconfig
+              pkgs.freetype
+              pkgs.wayland
+              pkgs.libxkbcommon
+              # Uncomment for X11 fallback support:
+              # pkgs.xorg.libX11
+              # pkgs.xorg.libXcursor
+              # pkgs.xorg.libXi
+              # pkgs.xorg.libXrandr
+              pkgs.vulkan-loader
+              # Uncomment if you want non-Vulkan GL path support:
+              # pkgs.libGL
+              pkgs.alsa-lib
+            ]}";
+            LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
+              pkgs.expat
+              pkgs.fontconfig
+              pkgs.freetype
+              pkgs.wayland
+              pkgs.libxkbcommon
+              # Uncomment for X11 fallback support:
+              # pkgs.xorg.libX11
+              # pkgs.xorg.libXcursor
+              # pkgs.xorg.libXi
+              # pkgs.xorg.libXrandr
+              pkgs.vulkan-loader
+              # Uncomment if you want non-Vulkan GL path support:
+              # pkgs.libGL
+              pkgs.alsa-lib
             ];
           };
         };
