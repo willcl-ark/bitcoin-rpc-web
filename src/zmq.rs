@@ -12,8 +12,6 @@ pub struct ZmqMessage {
     pub cursor: u64,
     pub topic: String,
     pub body_hex: String,
-    pub body_size: usize,
-    pub sequence: u32,
     pub timestamp: u64,
     pub event_hash: Option<String>,
 }
@@ -31,7 +29,7 @@ impl Default for ZmqState {
         Self {
             connected: false,
             address: String::new(),
-            buffer_limit: crate::rpc::DEFAULT_ZMQ_BUFFER_LIMIT,
+            buffer_limit: crate::core::rpc_client::DEFAULT_ZMQ_BUFFER_LIMIT,
             next_cursor: 1,
             messages: VecDeque::new(),
         }
@@ -114,12 +112,6 @@ pub fn start_zmq_subscriber(address: &str, state: Arc<ZmqSharedState>) -> ZmqHan
             let body = &parts[1];
             let body_hex = hex_encode(&body[..body.len().min(80)]);
             let event_hash = (body.len() >= 32).then(|| hash_from_notification(body));
-            let body_size = body.len();
-            let sequence = if parts[2].len() >= 4 {
-                u32::from_le_bytes([parts[2][0], parts[2][1], parts[2][2], parts[2][3]])
-            } else {
-                0
-            };
             let timestamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
@@ -127,8 +119,8 @@ pub fn start_zmq_subscriber(address: &str, state: Arc<ZmqSharedState>) -> ZmqHan
 
             let mut s = state.state.lock().unwrap();
             let limit = s.buffer_limit.clamp(
-                crate::rpc::MIN_ZMQ_BUFFER_LIMIT,
-                crate::rpc::MAX_ZMQ_BUFFER_LIMIT,
+                crate::core::rpc_client::MIN_ZMQ_BUFFER_LIMIT,
+                crate::core::rpc_client::MAX_ZMQ_BUFFER_LIMIT,
             );
             if s.messages.len() >= limit {
                 s.messages.pop_front();
@@ -139,8 +131,6 @@ pub fn start_zmq_subscriber(address: &str, state: Arc<ZmqSharedState>) -> ZmqHan
                 cursor,
                 topic,
                 body_hex,
-                body_size,
-                sequence,
                 timestamp,
                 event_hash,
             });

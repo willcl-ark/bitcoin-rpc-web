@@ -26,17 +26,19 @@ pub fn view(state: &State) -> Element<'_, Message> {
         Tab::Config => crate::ui::config::view(state),
     };
 
+    let main_area = row![
+        container(nav)
+            .style(components::panel_style())
+            .width(235)
+            .height(Fill),
+        content
+    ]
+    .spacing(8)
+    .height(Fill)
+    .width(Fill);
+
     container(
-        row![
-            container(nav)
-                .style(components::panel_style())
-                .width(235)
-                .height(Fill),
-            content
-        ]
-        .spacing(8)
-        .height(Fill)
-        .width(Fill),
+        column![main_area, crate::ui::music_bar::view(state)].width(Fill),
     )
     .style(components::app_surface())
     .padding(10)

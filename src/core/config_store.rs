@@ -16,10 +16,6 @@ impl ConfigStore {
         })
     }
 
-    pub fn with_path(path: PathBuf) -> Self {
-        Self { path }
-    }
-
     pub fn path(&self) -> &Path {
         &self.path
     }
@@ -92,7 +88,7 @@ mod tests {
             .as_nanos();
 
         let path = std::env::temp_dir().join(format!("bitcoin-rpc-web-config-{unique}.json"));
-        let store = ConfigStore::with_path(path.clone());
+        let store = ConfigStore { path: path.clone() };
 
         let config = RpcConfig {
             url: "http://127.0.0.1:18443".to_string(),

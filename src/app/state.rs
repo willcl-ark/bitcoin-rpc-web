@@ -6,6 +6,7 @@ use crate::core::config_store::ConfigStore;
 use crate::core::dashboard_service::DashboardSnapshot;
 use crate::core::rpc_client::{MAX_ZMQ_BUFFER_LIMIT, MIN_ZMQ_BUFFER_LIMIT, RpcClient, RpcConfig};
 use crate::core::schema::SchemaIndex;
+use crate::music::{MusicRuntime, MusicSnapshot};
 use crate::zmq::{ZmqHandle, ZmqSharedState, start_zmq_subscriber, stop_zmq_subscriber};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -104,6 +105,8 @@ pub struct State {
     pub zmq_last_topic: Option<String>,
     pub zmq_last_event_at: Option<u64>,
     pub zmq_recent_events: Vec<ZmqUiEvent>,
+    pub music: Option<MusicRuntime>,
+    pub music_snapshot: MusicSnapshot,
 }
 
 impl State {
@@ -191,7 +194,15 @@ impl State {
             zmq_last_topic: None,
             zmq_last_event_at: None,
             zmq_recent_events: Vec::new(),
+            music: None,
+            music_snapshot: MusicSnapshot::default(),
         };
+
+        if crate::music::is_enabled() {
+            let rt = crate::music::start_music();
+            state.music_snapshot = rt.snapshot();
+            state.music = Some(rt);
+        }
 
         let startup_zmq = state.runtime_config.zmq_address.trim().to_string();
         if !startup_zmq.is_empty() {

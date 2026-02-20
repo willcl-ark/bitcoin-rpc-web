@@ -65,54 +65,6 @@ impl RpcClient {
         Self { config, agent }
     }
 
-    pub fn config(&self) -> &RpcConfig {
-        &self.config
-    }
-
-    pub fn config_mut(&mut self) -> &mut RpcConfig {
-        &mut self.config
-    }
-
-    pub fn update_config(&mut self, patch: &Value) -> ConfigUpdateResult {
-        let mut insecure_blocked = false;
-        if let Some(url) = patch["url"].as_str() {
-            if is_safe_rpc_host(url) || allow_insecure() {
-                self.config.url = url.to_string();
-            } else {
-                insecure_blocked = true;
-            }
-        }
-
-        if let Some(user) = patch["user"].as_str() {
-            self.config.user = user.to_string();
-        }
-        if let Some(password) = patch["password"].as_str() {
-            self.config.password = password.to_string();
-        }
-        if let Some(wallet) = patch["wallet"].as_str() {
-            self.config.wallet = wallet.to_string();
-        }
-        if let Some(poll_interval_secs) = parse_u64(&patch["poll_interval_secs"]) {
-            self.config.poll_interval_secs = poll_interval_secs.clamp(1, 3600);
-        }
-
-        let mut zmq_changed = false;
-        if let Some(zmq_address) = patch["zmq_address"].as_str()
-            && zmq_address != self.config.zmq_address
-        {
-            self.config.zmq_address = zmq_address.to_string();
-            zmq_changed = true;
-        }
-        if let Some(limit) = parse_usize(&patch["zmq_buffer_limit"]) {
-            self.config.zmq_buffer_limit = limit.clamp(MIN_ZMQ_BUFFER_LIMIT, MAX_ZMQ_BUFFER_LIMIT);
-        }
-
-        ConfigUpdateResult {
-            insecure_blocked,
-            zmq_changed,
-        }
-    }
-
     pub fn endpoint_url(&self) -> String {
         if self.config.wallet.is_empty() {
             return self.config.url.clone();
@@ -181,12 +133,6 @@ impl RpcClient {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ConfigUpdateResult {
-    pub insecure_blocked: bool,
-    pub zmq_changed: bool,
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum RpcError {
     InvalidRequest(String),
@@ -221,22 +167,7 @@ pub fn allow_insecure() -> bool {
     })
 }
 
-pub fn normalize_payload(input: &Value) -> Result<(String, Value), RpcError> {
-    if let Some(calls) = input.as_array() {
-        let mut out = Vec::with_capacity(calls.len());
-        for (index, call) in calls.iter().enumerate() {
-            out.push(normalize_call(call, (index + 1) as u64)?);
-        }
-        return Ok((format!("batch[{}]", calls.len()), Value::Array(out)));
-    }
-
-    Ok((
-        input["method"].as_str().unwrap_or("").to_string(),
-        normalize_call(input, 1)?,
-    ))
-}
-
-pub fn normalize_call(call: &Value, fallback_id: u64) -> Result<Value, RpcError> {
+fn normalize_call(call: &Value, fallback_id: u64) -> Result<Value, RpcError> {
     let method = call["method"]
         .as_str()
         .ok_or_else(|| RpcError::InvalidRequest("missing RPC method".to_string()))?;
@@ -330,20 +261,6 @@ fn is_cgnat(v4: Ipv4Addr) -> bool {
     octets[0] == 100 && (64..=127).contains(&octets[1])
 }
 
-fn parse_usize(value: &Value) -> Option<usize> {
-    if let Some(number) = value.as_u64() {
-        return usize::try_from(number).ok();
-    }
-    value.as_str().and_then(|v| v.parse::<usize>().ok())
-}
-
-fn parse_u64(value: &Value) -> Option<u64> {
-    if let Some(number) = value.as_u64() {
-        return Some(number);
-    }
-    value.as_str().and_then(|v| v.parse::<u64>().ok())
-}
-
 fn basic_auth(user: &str, password: &str) -> String {
     use std::io::Write;
 
@@ -381,7 +298,23 @@ fn base64_encode(data: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{RpcError, extract_result, is_safe_rpc_host, normalize_payload};
+    use serde_json::Value;
+
+    use super::{RpcError, extract_result, is_safe_rpc_host, normalize_call};
+
+    fn normalize_payload(input: &Value) -> Result<(String, Value), RpcError> {
+        if let Some(calls) = input.as_array() {
+            let mut out = Vec::with_capacity(calls.len());
+            for (index, call) in calls.iter().enumerate() {
+                out.push(normalize_call(call, (index + 1) as u64)?);
+            }
+            return Ok((format!("batch[{}]", calls.len()), Value::Array(out)));
+        }
+        Ok((
+            input["method"].as_str().unwrap_or("").to_string(),
+            normalize_call(input, 1)?,
+        ))
+    }
 
     #[test]
     fn single_payload_is_normalized() {

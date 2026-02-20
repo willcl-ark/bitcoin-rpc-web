@@ -1,7 +1,49 @@
-use std::sync::Arc;
+pub struct MusicSnapshot {
+    pub track_name: String,
+    pub playing: bool,
+    pub volume: f32,
+    pub muted: bool,
+}
+
+impl Default for MusicSnapshot {
+    fn default() -> Self {
+        Self {
+            track_name: String::new(),
+            playing: false,
+            volume: 1.0,
+            muted: false,
+        }
+    }
+}
 
 pub struct MusicRuntime {
     inner: imp::InnerRuntime,
+}
+
+impl MusicRuntime {
+    pub fn snapshot(&self) -> MusicSnapshot {
+        imp::snapshot(&self.inner)
+    }
+
+    pub fn play_pause(&self) {
+        imp::play_pause(&self.inner);
+    }
+
+    pub fn next(&self) {
+        imp::next_track(&self.inner);
+    }
+
+    pub fn prev(&self) {
+        imp::prev_track(&self.inner);
+    }
+
+    pub fn set_volume(&self, v: f32) {
+        imp::set_volume(&self.inner, v);
+    }
+
+    pub fn toggle_mute(&self) {
+        imp::toggle_mute(&self.inner);
+    }
 }
 
 pub fn is_enabled() -> bool {
@@ -12,17 +54,6 @@ pub fn start_music() -> MusicRuntime {
     MusicRuntime {
         inner: imp::start_music(),
     }
-}
-
-pub fn handle_music_request(
-    path: &str,
-    query: &str,
-    runtime: &Arc<MusicRuntime>,
-) -> Option<String> {
-    if !path.starts_with("/music/") {
-        return None;
-    }
-    Some(imp::handle_music_request(path, query, &runtime.inner))
 }
 
 #[cfg(feature = "audio")]
@@ -59,7 +90,6 @@ mod imp {
 
     struct MusicState {
         current_track: usize,
-        track_count: usize,
         track_name: String,
         playing: bool,
         volume: f32,
@@ -130,6 +160,36 @@ mod imp {
         }
     }
 
+    pub(super) fn snapshot(runtime: &InnerRuntime) -> super::MusicSnapshot {
+        let s = runtime.state.lock().unwrap();
+        super::MusicSnapshot {
+            track_name: s.track_name.clone(),
+            playing: s.playing,
+            volume: s.volume,
+            muted: s.muted,
+        }
+    }
+
+    pub(super) fn play_pause(runtime: &InnerRuntime) {
+        let _ = runtime.tx.send(MusicCmd::PlayPause);
+    }
+
+    pub(super) fn next_track(runtime: &InnerRuntime) {
+        let _ = runtime.tx.send(MusicCmd::Next);
+    }
+
+    pub(super) fn prev_track(runtime: &InnerRuntime) {
+        let _ = runtime.tx.send(MusicCmd::Prev);
+    }
+
+    pub(super) fn set_volume(runtime: &InnerRuntime, v: f32) {
+        let _ = runtime.tx.send(MusicCmd::SetVolume(v));
+    }
+
+    pub(super) fn toggle_mute(runtime: &InnerRuntime) {
+        let _ = runtime.tx.send(MusicCmd::ToggleMute);
+    }
+
     pub(super) fn is_enabled() -> bool {
         true
     }
@@ -142,7 +202,6 @@ mod imp {
         let (tx, rx) = mpsc::channel();
         let state = Arc::new(Mutex::new(MusicState {
             current_track: 0,
-            track_count: tunes.len(),
             track_name: tunes.first().map_or("", |t| t.name).to_string(),
             playing: !tunes.is_empty(),
             volume: 1.0,
@@ -229,46 +288,6 @@ mod imp {
         InnerRuntime { tx, state }
     }
 
-    pub(super) fn handle_music_request(path: &str, query: &str, runtime: &InnerRuntime) -> String {
-        match path {
-            "/music/status" => {
-                let s = runtime.state.lock().unwrap();
-                serde_json::json!({
-                    "enabled": true,
-                    "track": s.track_name,
-                    "index": s.current_track,
-                    "count": s.track_count,
-                    "playing": s.playing,
-                    "volume": s.volume,
-                    "muted": s.muted,
-                })
-                .to_string()
-            }
-            "/music/playpause" => {
-                let _ = runtime.tx.send(MusicCmd::PlayPause);
-                r#"{"ok":true}"#.into()
-            }
-            "/music/next" => {
-                let _ = runtime.tx.send(MusicCmd::Next);
-                r#"{"ok":true}"#.into()
-            }
-            "/music/prev" => {
-                let _ = runtime.tx.send(MusicCmd::Prev);
-                r#"{"ok":true}"#.into()
-            }
-            "/music/volume" => {
-                let v: f32 = query.parse().unwrap_or(0.5);
-                let _ = runtime.tx.send(MusicCmd::SetVolume(v));
-                r#"{"ok":true}"#.into()
-            }
-            "/music/mute" => {
-                let _ = runtime.tx.send(MusicCmd::ToggleMute);
-                r#"{"ok":true}"#.into()
-            }
-            _ => r#"{"error":"unknown music endpoint"}"#.into(),
-        }
-    }
-
     fn load_tunes() -> Vec<Tune> {
         let raw: &[(&str, &[u8])] = &[
             (
@@ -331,24 +350,21 @@ mod imp {
 mod imp {
     pub(super) struct InnerRuntime;
 
+    pub(super) fn snapshot(_runtime: &InnerRuntime) -> super::MusicSnapshot {
+        super::MusicSnapshot::default()
+    }
+
+    pub(super) fn play_pause(_runtime: &InnerRuntime) {}
+    pub(super) fn next_track(_runtime: &InnerRuntime) {}
+    pub(super) fn prev_track(_runtime: &InnerRuntime) {}
+    pub(super) fn set_volume(_runtime: &InnerRuntime, _v: f32) {}
+    pub(super) fn toggle_mute(_runtime: &InnerRuntime) {}
+
     pub(super) fn is_enabled() -> bool {
         false
     }
 
     pub(super) fn start_music() -> InnerRuntime {
         InnerRuntime
-    }
-
-    pub(super) fn handle_music_request(
-        path: &str,
-        _query: &str,
-        _runtime: &InnerRuntime,
-    ) -> String {
-        match path {
-            "/music/status" => r#"{"enabled":false}"#.into(),
-            "/music/playpause" | "/music/next" | "/music/prev" | "/music/volume"
-            | "/music/mute" => r#"{"ok":false,"error":"audio feature disabled"}"#.into(),
-            _ => r#"{"error":"unknown music endpoint"}"#.into(),
-        }
     }
 }

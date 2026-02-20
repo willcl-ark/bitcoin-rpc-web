@@ -321,6 +321,41 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
                 );
             }
         }
+        Message::MusicPlayPause => {
+            if let Some(rt) = &state.music {
+                rt.play_pause();
+                state.music_snapshot = rt.snapshot();
+            }
+        }
+        Message::MusicNext => {
+            if let Some(rt) = &state.music {
+                rt.next();
+                state.music_snapshot = rt.snapshot();
+            }
+        }
+        Message::MusicPrev => {
+            if let Some(rt) = &state.music {
+                rt.prev();
+                state.music_snapshot = rt.snapshot();
+            }
+        }
+        Message::MusicSetVolume(v) => {
+            if let Some(rt) = &state.music {
+                rt.set_volume(v);
+                state.music_snapshot = rt.snapshot();
+            }
+        }
+        Message::MusicToggleMute => {
+            if let Some(rt) = &state.music {
+                rt.toggle_mute();
+                state.music_snapshot = rt.snapshot();
+            }
+        }
+        Message::MusicPollTick => {
+            if let Some(rt) = &state.music {
+                state.music_snapshot = rt.snapshot();
+            }
+        }
     }
 
     Task::none()

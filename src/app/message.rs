@@ -34,4 +34,10 @@ pub enum Message {
     DashboardPartialRefreshRequested(DashboardPartialSet),
     DashboardPartialLoaded(Result<DashboardPartialUpdate, String>),
     ZmqPollTick,
+    MusicPlayPause,
+    MusicNext,
+    MusicPrev,
+    MusicSetVolume(f32),
+    MusicToggleMute,
+    MusicPollTick,
 }

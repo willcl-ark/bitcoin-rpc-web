@@ -1,8 +1,6 @@
 use iced::theme::Palette;
-use iced::widget::{button, checkbox, column, container, text, text_input};
-use iced::{Background, Border, Color, Element, Fill, Shadow, Theme};
-
-use crate::app::message::Message;
+use iced::widget::{button, checkbox, container, text_input};
+use iced::{Background, Border, Color, Shadow, Theme};
 
 pub const BG: Color = Color::from_rgb(0.01, 0.03, 0.06);
 pub const PANEL: Color = Color::from_rgb(0.02, 0.08, 0.12);
@@ -16,14 +14,6 @@ pub const TEXT: Color = Color::from_rgb(0.81, 0.92, 0.98);
 pub const MUTED: Color = Color::from_rgb(0.44, 0.63, 0.75);
 pub const BORDER: Color = Color::from_rgb(0.08, 0.27, 0.36);
 pub const BORDER_HOT: Color = Color::from_rgb(0.14, 0.64, 0.74);
-
-pub fn placeholder_card<'a>(title: &'a str, body: &'a str) -> Element<'a, Message> {
-    container(column![text(title).size(24).color(TEXT), text(body).color(MUTED)].spacing(8))
-        .padding(24)
-        .width(Fill)
-        .style(panel_style())
-        .into()
-}
 
 pub fn mission_theme() -> Theme {
     Theme::custom(
