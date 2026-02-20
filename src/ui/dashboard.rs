@@ -14,103 +14,73 @@ pub fn view(state: &State) -> Element<'_, Message> {
         format!("disconnected ({})", state.zmq_connected_address)
     };
 
-    let mut left = column![
-        text("Dashboard").size(32).color(components::TEXT),
-        card(
-            "ZMQ Feed",
-            vec![
-                format!("status: {zmq_status}"),
-                format!(
-                    "refresh state: {}",
-                    if state.dashboard_in_flight {
-                        "syncing"
-                    } else {
-                        "idle"
-                    }
-                ),
-                format!("events seen: {}", state.zmq_events_seen),
-                format!(
-                    "last topic: {}",
-                    state.zmq_last_topic.as_deref().unwrap_or("-")
-                ),
-                format!(
-                    "last event unix: {}",
-                    state
-                        .zmq_last_event_at
-                        .map(|v| v.to_string())
-                        .unwrap_or_else(|| "-".to_string())
-                ),
-            ],
-        )
-    ]
-    .spacing(10);
-
-    if let Some(error) = &state.dashboard_error {
-        left = left.push(card(
-            "Refresh Error",
-            vec![
-                error.clone(),
-                "Periodic refresh continues in background.".to_string(),
-            ],
-        ));
-    }
-
-    if let Some(snapshot) = &state.dashboard_snapshot {
-        left = left
-            .push(card(
+    let top_strip: Element<'_, Message> = if let Some(snapshot) = &state.dashboard_snapshot {
+        row![
+            summary_card(
                 "Chain",
                 vec![
-                    format!("network: {}", snapshot.chain.chain),
-                    format!("blocks: {}", snapshot.chain.blocks),
-                    format!("headers: {}", snapshot.chain.headers),
-                    format!("verification: {:.4}", snapshot.chain.verification_progress),
-                ],
-            ))
-            .push(card(
+                    ("network", snapshot.chain.chain.clone()),
+                    ("blocks", snapshot.chain.blocks.to_string()),
+                    ("headers", snapshot.chain.headers.to_string()),
+                    (
+                        "verification",
+                        format!("{:.4}", snapshot.chain.verification_progress)
+                    ),
+                ]
+            )
+            .width(iced::Length::FillPortion(1)),
+            summary_card(
                 "Mempool",
                 vec![
-                    format!("transactions: {}", snapshot.mempool.transactions),
-                    format!("bytes: {}", snapshot.mempool.bytes),
-                    format!("usage: {}", snapshot.mempool.usage),
-                    format!("max: {}", snapshot.mempool.maxmempool),
-                ],
-            ))
-            .push(card(
+                    ("transactions", snapshot.mempool.transactions.to_string()),
+                    ("bytes", snapshot.mempool.bytes.to_string()),
+                    ("usage", snapshot.mempool.usage.to_string()),
+                    ("max", snapshot.mempool.maxmempool.to_string()),
+                ]
+            )
+            .width(iced::Length::FillPortion(1)),
+            summary_card(
                 "Network",
                 vec![
-                    format!("version: {}", snapshot.network.version),
-                    format!("subversion: {}", snapshot.network.subversion),
-                    format!("protocol: {}", snapshot.network.protocol_version),
-                    format!("connections: {}", snapshot.network.connections),
-                    format!("uptime: {}s", snapshot.uptime_secs),
-                ],
-            ))
-            .push(card(
+                    ("version", snapshot.network.version.to_string()),
+                    ("subversion", snapshot.network.subversion.clone()),
+                    ("protocol", snapshot.network.protocol_version.to_string()),
+                    ("connections", snapshot.network.connections.to_string()),
+                    ("uptime", format!("{}s", snapshot.uptime_secs)),
+                ]
+            )
+            .width(iced::Length::FillPortion(1)),
+            summary_card(
                 "Traffic",
                 vec![
-                    format!("recv: {} bytes", snapshot.traffic.total_bytes_recv),
-                    format!("sent: {} bytes", snapshot.traffic.total_bytes_sent),
-                ],
-            ));
-    } else if !state.dashboard_in_flight {
-        left = left.push(text("No dashboard data yet."));
-    }
-
-    let peers = peer_list(state);
-    let detail = peer_detail(state);
-
-    let content = row![
-        container(scrollable(left).height(Fill))
-            .style(components::panel_style())
+                    (
+                        "recv",
+                        format!("{} bytes", snapshot.traffic.total_bytes_recv)
+                    ),
+                    (
+                        "sent",
+                        format!("{} bytes", snapshot.traffic.total_bytes_sent)
+                    ),
+                ]
+            )
+            .width(iced::Length::FillPortion(1)),
+        ]
+        .spacing(10)
+        .into()
+    } else {
+        container(text("No dashboard data yet.").color(components::MUTED))
+            .style(components::card_style())
             .padding(14)
-            .width(iced::Length::FillPortion(2))
-            .height(Fill),
-        container(peers)
+            .into()
+    };
+
+    let main_body = row![
+        container(peer_table(state))
             .style(components::panel_style())
             .padding(12)
-            .width(iced::Length::FillPortion(2))
+            .width(iced::Length::FillPortion(3))
             .height(Fill),
-        container(detail)
+        container(peer_detail(state))
             .style(components::panel_style())
             .padding(12)
             .width(iced::Length::FillPortion(2))
@@ -119,72 +89,133 @@ pub fn view(state: &State) -> Element<'_, Message> {
     .spacing(12)
     .height(Fill);
 
-    container(content)
-        .padding(12)
-        .width(Fill)
-        .height(Fill)
-        .into()
-}
+    let zmq_panel = container(summary_card(
+        "ZMQ Feed",
+        vec![
+            ("status", zmq_status),
+            (
+                "refresh",
+                if state.dashboard_in_flight {
+                    "syncing".to_string()
+                } else {
+                    "idle".to_string()
+                },
+            ),
+            ("events seen", state.zmq_events_seen.to_string()),
+            (
+                "last topic",
+                state.zmq_last_topic.as_deref().unwrap_or("-").to_string(),
+            ),
+            (
+                "last event unix",
+                state
+                    .zmq_last_event_at
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "-".to_string()),
+            ),
+        ],
+    ))
+    .style(components::panel_style())
+    .padding(10)
+    .width(Fill);
 
-fn peer_list(state: &State) -> Element<'_, Message> {
-    let mut list = column![text("Peers").size(24).color(components::TEXT)].spacing(8);
-    if let Some(snapshot) = &state.dashboard_snapshot {
-        if snapshot.peers.is_empty() {
-            list = list.push(text("No peers").color(components::MUTED));
-        } else {
-            for peer in &snapshot.peers {
-                let selected = state.dashboard_selected_peer_id == Some(peer.id);
-                let ping = peer
-                    .ping_time
-                    .map(|v| format!("{v:.3}s"))
-                    .unwrap_or_else(|| "-".to_string());
-                let label = format!(
-                    "{} {} ({})  ping {}",
-                    if selected { "selected" } else { "peer" },
-                    peer.id,
-                    peer.addr,
-                    ping
-                );
-                list = list.push(
-                    button(text(label))
-                        .width(Fill)
-                        .style(components::nav_button_style(selected))
-                        .on_press(Message::DashboardPeerSelected(peer.id)),
-                );
-            }
-        }
-    } else {
-        list = list.push(text("No peer data").color(components::MUTED));
+    let mut root = column![
+        text("Dashboard").size(32).color(components::TEXT),
+        top_strip,
+        main_body,
+        zmq_panel
+    ]
+    .spacing(12)
+    .height(Fill)
+    .width(Fill);
+
+    if let Some(error) = &state.dashboard_error {
+        root = root.push(
+            text(format!("Refresh error: {error}")).color(iced::Color::from_rgb(0.96, 0.58, 0.58)),
+        );
     }
 
-    scrollable(list).into()
+    container(root).padding(12).width(Fill).height(Fill).into()
+}
+
+fn peer_table(state: &State) -> Element<'_, Message> {
+    let header = row![
+        text("ID")
+            .width(iced::Length::FillPortion(1))
+            .color(components::MUTED),
+        text("Address")
+            .width(iced::Length::FillPortion(4))
+            .color(components::MUTED),
+        text("Dir")
+            .width(iced::Length::FillPortion(1))
+            .color(components::MUTED),
+        text("Type")
+            .width(iced::Length::FillPortion(2))
+            .color(components::MUTED),
+        text("Ping")
+            .width(iced::Length::FillPortion(1))
+            .color(components::MUTED),
+    ]
+    .spacing(8);
+
+    let mut rows = column![text("Peers").size(24).color(components::TEXT), header].spacing(8);
+
+    if let Some(snapshot) = &state.dashboard_snapshot {
+        for peer in &snapshot.peers {
+            let selected = state.dashboard_selected_peer_id == Some(peer.id);
+            let ping = peer
+                .ping_time
+                .map(|v| format!("{v:.3}s"))
+                .unwrap_or_else(|| "-".to_string());
+
+            let row_line = row![
+                text(peer.id.to_string()).width(iced::Length::FillPortion(1)),
+                text(peer.addr.clone()).width(iced::Length::FillPortion(4)),
+                text(if peer.inbound { "in" } else { "out" }).width(iced::Length::FillPortion(1)),
+                text(peer.connection_type.clone()).width(iced::Length::FillPortion(2)),
+                text(ping).width(iced::Length::FillPortion(1)),
+            ]
+            .spacing(8);
+
+            rows = rows.push(
+                button(row_line)
+                    .width(Fill)
+                    .style(components::nav_button_style(selected))
+                    .on_press(Message::DashboardPeerSelected(peer.id)),
+            );
+        }
+    } else {
+        rows = rows.push(text("No peer data").color(components::MUTED));
+    }
+
+    scrollable(rows).into()
 }
 
 fn peer_detail(state: &State) -> Element<'_, Message> {
-    let mut detail = column![text("Peer Detail").size(24).color(components::TEXT)].spacing(8);
+    let mut detail = column![text("Peer Detail").size(24).color(components::TEXT)].spacing(10);
     if let Some(snapshot) = &state.dashboard_snapshot {
         let selected = state
             .dashboard_selected_peer_id
             .and_then(|id| snapshot.peers.iter().find(|peer| peer.id == id));
 
         if let Some(peer) = selected {
-            detail = detail.push(card(
+            detail = detail.push(summary_card(
                 "Selected Peer",
                 vec![
-                    format!("id: {}", peer.id),
-                    format!("addr: {}", peer.addr),
-                    format!("inbound: {}", peer.inbound),
-                    format!("type: {}", peer.connection_type),
-                    format!(
-                        "ping: {}",
+                    ("id", peer.id.to_string()),
+                    ("addr", peer.addr.clone()),
+                    ("inbound", peer.inbound.to_string()),
+                    ("type", peer.connection_type.clone()),
+                    (
+                        "ping",
                         peer.ping_time
-                            .map(|v| format!("{v:.6}"))
-                            .unwrap_or_else(|| "-".to_string())
+                            .map(|v| format!("{v:.6}s"))
+                            .unwrap_or_else(|| "-".to_string()),
                     ),
                 ],
             ));
         } else {
-            detail = detail.push(text("Select a peer from the list.").color(components::MUTED));
+            detail = detail.push(text("Select a peer from the table.").color(components::MUTED));
         }
     } else {
         detail = detail.push(text("No peer data").color(components::MUTED));
@@ -193,13 +224,25 @@ fn peer_detail(state: &State) -> Element<'_, Message> {
     scrollable(detail).into()
 }
 
-fn card<'a>(title: &'a str, lines: Vec<String>) -> Element<'a, Message> {
+fn summary_card<'a>(
+    title: &'a str,
+    lines: Vec<(&'a str, String)>,
+) -> iced::widget::Container<'a, Message> {
     let mut content = column![text(title).size(21).color(components::TEXT)].spacing(6);
-    for line in lines {
-        content = content.push(text(line).color(components::MUTED));
+    for (key, value) in lines {
+        content = content.push(
+            row![
+                text(format!("{key}:"))
+                    .color(components::MUTED)
+                    .width(iced::Length::FillPortion(2)),
+                text(value)
+                    .color(components::MUTED)
+                    .width(iced::Length::FillPortion(5))
+            ]
+            .spacing(6),
+        );
     }
     container(content)
         .padding(12)
         .style(components::card_style())
-        .into()
 }
