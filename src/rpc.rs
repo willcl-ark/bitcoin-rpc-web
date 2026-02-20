@@ -52,9 +52,10 @@ pub fn do_rpc(body: &str, config: &Arc<Mutex<RpcConfig>>) -> String {
             return json_error(e.to_string());
         }
     };
-
-    let method = msg["method"].as_str().unwrap_or("");
-    let params = &msg["params"];
+    let (method, payload) = match build_rpc_payload(&msg) {
+        Ok(v) => v,
+        Err(e) => return json_error(e),
+    };
 
     let cfg = config.lock().unwrap();
     let mut url = cfg.url.clone();
@@ -67,14 +68,7 @@ pub fn do_rpc(body: &str, config: &Arc<Mutex<RpcConfig>>) -> String {
         url = format!("{url}/wallet/{wallet}");
     }
 
-    let envelope = serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": method,
-        "params": params,
-    });
-
-    let payload = envelope.to_string();
+    let payload = payload.to_string();
     debug!(method, url = %url, "rpc POST");
     match rpc_agent()
         .post(&url)
@@ -93,6 +87,50 @@ pub fn do_rpc(body: &str, config: &Arc<Mutex<RpcConfig>>) -> String {
             json_error(e.to_string())
         }
     }
+}
+
+fn build_rpc_payload(msg: &serde_json::Value) -> Result<(String, serde_json::Value), String> {
+    if let Some(calls) = msg.as_array() {
+        let mut out = Vec::with_capacity(calls.len());
+        for (i, call) in calls.iter().enumerate() {
+            out.push(normalize_call(call, i + 1)?);
+        }
+        return Ok((
+            format!("batch[{}]", calls.len()),
+            serde_json::Value::Array(out),
+        ));
+    }
+    Ok((
+        msg["method"].as_str().unwrap_or("").to_string(),
+        normalize_call(msg, 1)?,
+    ))
+}
+
+fn normalize_call(
+    call: &serde_json::Value,
+    fallback_id: usize,
+) -> Result<serde_json::Value, String> {
+    let method = call["method"]
+        .as_str()
+        .ok_or_else(|| "missing RPC method".to_string())?;
+    let params = call
+        .get("params")
+        .cloned()
+        .unwrap_or_else(|| serde_json::Value::Array(Vec::new()));
+    let jsonrpc = call
+        .get("jsonrpc")
+        .cloned()
+        .unwrap_or_else(|| serde_json::Value::String("2.0".to_string()));
+    let id = call
+        .get("id")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!(fallback_id));
+    Ok(serde_json::json!({
+        "jsonrpc": jsonrpc,
+        "id": id,
+        "method": method,
+        "params": params,
+    }))
 }
 
 fn json_error(message: String) -> String {
@@ -141,10 +179,11 @@ pub fn update_config(body: &str, config: &Arc<Mutex<RpcConfig>>) -> ConfigUpdate
     }
     let mut zmq_changed = false;
     if let Some(addr) = msg["zmq_address"].as_str()
-        && cfg.zmq_address != addr {
-            cfg.zmq_address = addr.into();
-            zmq_changed = true;
-        }
+        && cfg.zmq_address != addr
+    {
+        cfg.zmq_address = addr.into();
+        zmq_changed = true;
+    }
     if let Some(limit) = parse_usize(&msg["zmq_buffer_limit"]) {
         cfg.zmq_buffer_limit = limit.clamp(MIN_ZMQ_BUFFER_LIMIT, MAX_ZMQ_BUFFER_LIMIT);
     }
@@ -247,8 +286,8 @@ fn parse_usize(value: &serde_json::Value) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::{
-        MAX_ZMQ_BUFFER_LIMIT, MIN_ZMQ_BUFFER_LIMIT, RpcConfig, is_safe_rpc_host, json_error,
-        update_config,
+        MAX_ZMQ_BUFFER_LIMIT, MIN_ZMQ_BUFFER_LIMIT, RpcConfig, build_rpc_payload, is_safe_rpc_host,
+        json_error, update_config,
     };
     use std::sync::{Arc, Mutex};
 
@@ -294,5 +333,32 @@ mod tests {
         let out = json_error("bad \"quote\"\nline".to_string());
         let v: serde_json::Value = serde_json::from_str(&out).expect("valid JSON error envelope");
         assert_eq!(v["error"].as_str(), Some("bad \"quote\"\nline"));
+    }
+
+    #[test]
+    fn single_call_payload_is_normalized() {
+        let (method, payload) = build_rpc_payload(&serde_json::json!({
+            "method": "getblockcount",
+            "params": []
+        }))
+        .expect("single call is valid");
+        assert_eq!(method, "getblockcount");
+        assert_eq!(payload["jsonrpc"].as_str(), Some("2.0"));
+        assert_eq!(payload["id"].as_u64(), Some(1));
+        assert_eq!(payload["method"].as_str(), Some("getblockcount"));
+    }
+
+    #[test]
+    fn batch_payload_is_normalized_and_preserves_ids() {
+        let (method, payload) = build_rpc_payload(&serde_json::json!([
+            { "method": "uptime", "params": [] },
+            { "id": 42, "method": "getmempoolinfo", "params": [] }
+        ]))
+        .expect("batch is valid");
+        assert_eq!(method, "batch[2]");
+        let arr = payload.as_array().expect("batch payload should be array");
+        assert_eq!(arr[0]["id"].as_u64(), Some(1));
+        assert_eq!(arr[1]["id"].as_u64(), Some(42));
+        assert_eq!(arr[1]["method"].as_str(), Some("getmempoolinfo"));
     }
 }

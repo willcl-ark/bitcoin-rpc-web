@@ -402,6 +402,43 @@ async function rpcCall(method, params) {
   return resp.json();
 }
 
+async function rpcBatch(calls) {
+  const payload = calls.map((call, i) => ({
+    jsonrpc: "2.0",
+    id: i + 1,
+    method: call.method,
+    params: call.params,
+  }));
+  const resp = await fetch("/rpc", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-app-json": encodeHeaderJson(payload),
+    },
+    body: JSON.stringify(payload),
+  });
+  return resp.json();
+}
+
+function normalizeBatchResponse(items, count) {
+  const out = new Array(count);
+  if (!Array.isArray(items)) {
+    for (let i = 0; i < count; i++) {
+      out[i] = { error: "Invalid batch response from RPC proxy" };
+    }
+    return out;
+  }
+  const byId = new Map();
+  for (const item of items) {
+    if (!item || typeof item !== "object") continue;
+    byId.set(Number(item.id), item);
+  }
+  for (let i = 0; i < count; i++) {
+    out[i] = byId.get(i + 1) || { error: `Missing batch item id=${i + 1}` };
+  }
+  return out;
+}
+
 // --- Dashboard ---
 
 function showDashboard() {
@@ -482,35 +519,36 @@ async function flushDashboardPartRefreshes() {
   if (dashboardFetchInFlight) return;
   const parts = new Set(pendingDashboardParts);
   pendingDashboardParts.clear();
-  const tasks = [];
+  const calls = [];
+  const idx = {};
   if (parts.has("chain")) {
-    tasks.push((async () => {
-      const [chain, uptime] = await Promise.all([
-        rpcCall("getblockchaininfo", []),
-        rpcCall("uptime", []),
-      ]);
-      if (chain.result) renderChain(chain.result, uptime.result);
-    })());
+    idx.chain = calls.length;
+    calls.push({ method: "getblockchaininfo", params: [] });
+    idx.uptime = calls.length;
+    calls.push({ method: "uptime", params: [] });
   }
   if (parts.has("mempool")) {
-    tasks.push((async () => {
-      const mempool = await rpcCall("getmempoolinfo", []);
-      if (mempool.result) renderMempool(mempool.result);
-    })());
+    idx.mempool = calls.length;
+    calls.push({ method: "getmempoolinfo", params: [] });
   }
   const now = Date.now();
   if (parts.has("peers") && (now - lastPeersRefreshMs >= PEERS_REFRESH_MIN_MS)) {
-    tasks.push((async () => {
-      const peers = await rpcCall("getpeerinfo", []);
-      if (peers.result) {
-        renderPeers(peers.result);
-        lastPeersRefreshMs = Date.now();
-      }
-    })());
+    idx.peers = calls.length;
+    calls.push({ method: "getpeerinfo", params: [] });
   }
-  if (tasks.length === 0) return;
+  if (calls.length === 0) return;
   try {
-    await Promise.all(tasks);
+    const responses = normalizeBatchResponse(await rpcBatch(calls), calls.length);
+    const chain = idx.chain != null ? responses[idx.chain] : null;
+    const up = idx.uptime != null ? responses[idx.uptime] : null;
+    const mempool = idx.mempool != null ? responses[idx.mempool] : null;
+    const peers = idx.peers != null ? responses[idx.peers] : null;
+    if (chain && chain.result) renderChain(chain.result, up ? up.result : undefined);
+    if (mempool && mempool.result) renderMempool(mempool.result);
+    if (peers && peers.result) {
+      renderPeers(peers.result);
+      lastPeersRefreshMs = Date.now();
+    }
     updateStatus(true);
   } catch (_) {
     updateStatus(false);
@@ -524,14 +562,18 @@ async function fetchDashboard() {
   }
   dashboardFetchInFlight = true;
   try {
-    const [chain, net, mempool, peers, up, totals] = await Promise.all([
-      rpcCall("getblockchaininfo", []),
-      rpcCall("getnetworkinfo", []),
-      rpcCall("getmempoolinfo", []),
-      rpcCall("getpeerinfo", []),
-      rpcCall("uptime", []),
-      rpcCall("getnettotals", []),
-    ]);
+    const calls = [
+      { method: "getblockchaininfo", params: [] },
+      { method: "getnetworkinfo", params: [] },
+      { method: "getmempoolinfo", params: [] },
+      { method: "getpeerinfo", params: [] },
+      { method: "uptime", params: [] },
+      { method: "getnettotals", params: [] },
+    ];
+    const [chain, net, mempool, peers, up, totals] = normalizeBatchResponse(
+      await rpcBatch(calls),
+      calls.length,
+    );
     requestAnimationFrame(() => {
       try {
         if (chain.result) renderChain(chain.result, up.result);
