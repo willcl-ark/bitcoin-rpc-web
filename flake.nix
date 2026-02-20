@@ -81,29 +81,24 @@
           packages =
             with pkgs;
             [
-              rust-analyzer
-              openssl
-              pkg-config
               cargo-deny
               cargo-edit
               cargo-watch
+              openssl
+              pkg-config
+              rust-analyzer
               zeromq
             ]
             ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
-              expat
-              fontconfig
-              freetype
-              freetype.dev
+              # GPU backend
+              vulkan-loader
+              # libGL
+
+              # Window system
               wayland
-              libxkbcommon
-              # Uncomment for X11 fallback support:
               # xorg.libX11
               # xorg.libXcursor
               # xorg.libXi
-              # xorg.libXrandr
-              vulkan-loader
-              # Uncomment if you want non-Vulkan GL path support:
-              # libGL
               alsa-lib
             ]
             ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
@@ -114,37 +109,31 @@
             RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";
           }
           // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
-            RUSTFLAGS = "-C link-arg=-Wl,-rpath,${pkgs.lib.makeLibraryPath [
-              pkgs.expat
-              pkgs.fontconfig
-              pkgs.freetype
-              pkgs.wayland
-              pkgs.libxkbcommon
-              # Uncomment for X11 fallback support:
-              # pkgs.xorg.libX11
-              # pkgs.xorg.libXcursor
-              # pkgs.xorg.libXi
-              # pkgs.xorg.libXrandr
-              pkgs.vulkan-loader
-              # Uncomment if you want non-Vulkan GL path support:
-              # pkgs.libGL
-              pkgs.alsa-lib
-            ]}";
+            RUSTFLAGS = "-C link-arg=-Wl,-rpath,${
+              pkgs.lib.makeLibraryPath [
+                pkgs.alsa-lib
+                # GPU backend
+                pkgs.vulkan-loader
+                # pkgs.libGL
+
+                # Window system
+                pkgs.wayland
+                # xorg.libX11
+                # xorg.libXcursor
+                # xorg.libXi
+              ]
+            }";
             LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
-              pkgs.expat
-              pkgs.fontconfig
-              pkgs.freetype
-              pkgs.wayland
-              pkgs.libxkbcommon
-              # Uncomment for X11 fallback support:
-              # pkgs.xorg.libX11
-              # pkgs.xorg.libXcursor
-              # pkgs.xorg.libXi
-              # pkgs.xorg.libXrandr
-              pkgs.vulkan-loader
-              # Uncomment if you want non-Vulkan GL path support:
-              # pkgs.libGL
               pkgs.alsa-lib
+              # GPU backend
+              pkgs.vulkan-loader
+              # pkgs.libGl
+
+              # Window system
+              pkgs.wayland
+              # xorg.libX11
+              # xorg.libXcursor
+              # xorg.libXi
             ];
           };
         };
