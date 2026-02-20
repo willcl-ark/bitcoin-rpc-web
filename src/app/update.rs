@@ -189,6 +189,11 @@ fn handle_config(state: &mut State, message: Message) -> Task<Message> {
         }
         Message::ConfigReloadFinished(result) => match result {
             Ok(config) => {
+                if let Err(error) = validate_rpc_host(&config) {
+                    state.config.status = None;
+                    state.config.error = Some(error);
+                    return Task::none();
+                }
                 apply_runtime_config(state, config);
                 state.config.status = Some("Settings reloaded.".to_string());
                 return Task::perform(async {}, |_| Message::DashboardTick);
