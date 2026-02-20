@@ -1,2 +1,248 @@
-#[derive(Debug, Default)]
-pub struct DashboardService;
+
+use serde_json::Value;
+
+use crate::core::rpc_client::{RpcCall, RpcClient, RpcError};
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DashboardSnapshot {
+    pub chain: ChainSummary,
+    pub mempool: MempoolSummary,
+    pub network: NetworkSummary,
+    pub traffic: TrafficSummary,
+    pub peers: Vec<PeerSummary>,
+    pub uptime_secs: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChainSummary {
+    pub chain: String,
+    pub blocks: u64,
+    pub headers: u64,
+    pub verification_progress: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MempoolSummary {
+    pub transactions: u64,
+    pub bytes: u64,
+    pub usage: u64,
+    pub maxmempool: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct NetworkSummary {
+    pub version: i64,
+    pub subversion: String,
+    pub protocol_version: i64,
+    pub connections: i64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TrafficSummary {
+    pub total_bytes_recv: u64,
+    pub total_bytes_sent: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PeerSummary {
+    pub id: i64,
+    pub addr: String,
+    pub inbound: bool,
+    pub connection_type: String,
+    pub ping_time: Option<f64>,
+}
+
+pub struct DashboardService {
+    rpc_client: RpcClient,
+}
+
+impl DashboardService {
+    pub fn new(rpc_client: RpcClient) -> Self {
+        Self { rpc_client }
+    }
+
+    pub fn fetch_snapshot(&self) -> Result<DashboardSnapshot, RpcError> {
+        let calls = vec![
+            RpcCall::new(serde_json::json!(1), "getblockchaininfo", serde_json::json!([])),
+            RpcCall::new(serde_json::json!(2), "getnetworkinfo", serde_json::json!([])),
+            RpcCall::new(serde_json::json!(3), "getmempoolinfo", serde_json::json!([])),
+            RpcCall::new(serde_json::json!(4), "getpeerinfo", serde_json::json!([])),
+            RpcCall::new(serde_json::json!(5), "uptime", serde_json::json!([])),
+            RpcCall::new(serde_json::json!(6), "getnettotals", serde_json::json!([])),
+        ];
+        let responses = self.rpc_client.batch(&calls)?;
+        self.build_snapshot(&responses)
+    }
+
+    pub fn build_snapshot(&self, responses: &[Value]) -> Result<DashboardSnapshot, RpcError> {
+        if responses.len() != 6 {
+            return Err(RpcError::InvalidResponse(format!(
+                "expected 6 dashboard responses, got {}",
+                responses.len()
+            )));
+        }
+
+        let blockchain = responses[0].as_object().ok_or_else(|| {
+            RpcError::InvalidResponse("getblockchaininfo result must be object".to_string())
+        })?;
+        let network = responses[1].as_object().ok_or_else(|| {
+            RpcError::InvalidResponse("getnetworkinfo result must be object".to_string())
+        })?;
+        let mempool = responses[2].as_object().ok_or_else(|| {
+            RpcError::InvalidResponse("getmempoolinfo result must be object".to_string())
+        })?;
+        let peers = responses[3].as_array().ok_or_else(|| {
+            RpcError::InvalidResponse("getpeerinfo result must be array".to_string())
+        })?;
+        let uptime_secs = responses[4].as_u64().ok_or_else(|| {
+            RpcError::InvalidResponse("uptime result must be u64".to_string())
+        })?;
+        let traffic = responses[5].as_object().ok_or_else(|| {
+            RpcError::InvalidResponse("getnettotals result must be object".to_string())
+        })?;
+
+        let chain = ChainSummary {
+            chain: string(blockchain, "chain")?,
+            blocks: u64_field(blockchain, "blocks")?,
+            headers: u64_field(blockchain, "headers")?,
+            verification_progress: f64_field(blockchain, "verificationprogress")?,
+        };
+
+        let mempool = MempoolSummary {
+            transactions: u64_field(mempool, "size")?,
+            bytes: u64_field(mempool, "bytes")?,
+            usage: u64_field(mempool, "usage")?,
+            maxmempool: u64_field(mempool, "maxmempool")?,
+        };
+
+        let network = NetworkSummary {
+            version: i64_field(network, "version")?,
+            subversion: string(network, "subversion")?,
+            protocol_version: i64_field(network, "protocolversion")?,
+            connections: i64_field(network, "connections")?,
+        };
+
+        let traffic = TrafficSummary {
+            total_bytes_recv: u64_field(traffic, "totalbytesrecv")?,
+            total_bytes_sent: u64_field(traffic, "totalbytessent")?,
+        };
+
+        let peers = peers
+            .iter()
+            .filter_map(|peer| {
+                let peer = peer.as_object()?;
+                Some(PeerSummary {
+                    id: i64_field(peer, "id").ok()?,
+                    addr: string(peer, "addr").ok()?,
+                    inbound: bool_field(peer, "inbound").ok()?,
+                    connection_type: string(peer, "connection_type")
+                        .unwrap_or_else(|_| "unknown".to_string()),
+                    ping_time: peer.get("pingtime").and_then(Value::as_f64),
+                })
+            })
+            .collect();
+
+        Ok(DashboardSnapshot {
+            chain,
+            mempool,
+            network,
+            traffic,
+            peers,
+            uptime_secs,
+        })
+    }
+}
+
+fn string(object: &serde_json::Map<String, Value>, key: &str) -> Result<String, RpcError> {
+    object
+        .get(key)
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| RpcError::InvalidResponse(format!("missing string field: {key}")))
+}
+
+fn u64_field(object: &serde_json::Map<String, Value>, key: &str) -> Result<u64, RpcError> {
+    object
+        .get(key)
+        .and_then(Value::as_u64)
+        .ok_or_else(|| RpcError::InvalidResponse(format!("missing u64 field: {key}")))
+}
+
+fn i64_field(object: &serde_json::Map<String, Value>, key: &str) -> Result<i64, RpcError> {
+    object
+        .get(key)
+        .and_then(Value::as_i64)
+        .ok_or_else(|| RpcError::InvalidResponse(format!("missing i64 field: {key}")))
+}
+
+fn f64_field(object: &serde_json::Map<String, Value>, key: &str) -> Result<f64, RpcError> {
+    object
+        .get(key)
+        .and_then(Value::as_f64)
+        .ok_or_else(|| RpcError::InvalidResponse(format!("missing f64 field: {key}")))
+}
+
+fn bool_field(object: &serde_json::Map<String, Value>, key: &str) -> Result<bool, RpcError> {
+    object
+        .get(key)
+        .and_then(Value::as_bool)
+        .ok_or_else(|| RpcError::InvalidResponse(format!("missing bool field: {key}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::core::dashboard_service::DashboardService;
+    use crate::core::rpc_client::{RpcClient, RpcConfig};
+
+    #[test]
+    fn snapshot_builder_maps_representative_payloads() {
+        let service = DashboardService::new(RpcClient::new(RpcConfig::default()));
+        let responses = vec![
+            serde_json::json!({
+                "chain": "regtest",
+                "blocks": 101,
+                "headers": 101,
+                "verificationprogress": 1.0
+            }),
+            serde_json::json!({
+                "version": 299900,
+                "subversion": "/Satoshi:30.99.0/",
+                "protocolversion": 70016,
+                "connections": 8
+            }),
+            serde_json::json!({
+                "size": 2,
+                "bytes": 1234,
+                "usage": 5678,
+                "maxmempool": 300000000
+            }),
+            serde_json::json!([
+                {
+                    "id": 1,
+                    "addr": "127.0.0.1:18444",
+                    "inbound": true,
+                    "connection_type": "manual",
+                    "pingtime": 0.001
+                }
+            ]),
+            serde_json::json!(123),
+            serde_json::json!({
+                "totalbytesrecv": 1000,
+                "totalbytessent": 2000
+            }),
+        ];
+
+        let snapshot = service
+            .build_snapshot(&responses)
+            .expect("snapshot should build");
+
+        assert_eq!(snapshot.chain.chain, "regtest");
+        assert_eq!(snapshot.chain.blocks, 101);
+        assert_eq!(snapshot.network.connections, 8);
+        assert_eq!(snapshot.mempool.transactions, 2);
+        assert_eq!(snapshot.traffic.total_bytes_sent, 2000);
+        assert_eq!(snapshot.uptime_secs, 123);
+        assert_eq!(snapshot.peers.len(), 1);
+        assert_eq!(snapshot.peers[0].connection_type, "manual");
+    }
+}
