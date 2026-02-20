@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Instant;
 
 use crate::core::config_store::ConfigStore;
 use crate::core::dashboard_service::DashboardSnapshot;
@@ -12,6 +13,12 @@ pub enum Tab {
     Dashboard,
     Rpc,
     Config,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DashboardPartialSet {
+    MempoolOnly,
+    ChainAndMempool,
 }
 
 #[derive(Debug, Clone)]
@@ -67,6 +74,14 @@ pub struct State {
     pub dashboard_in_flight: bool,
     pub dashboard_error: Option<String>,
     pub dashboard_selected_peer_id: Option<i64>,
+    pub dashboard_pending_partial: Option<DashboardPartialSet>,
+    pub dashboard_last_refresh_at: Option<Instant>,
+    pub zmq_connected: bool,
+    pub zmq_connected_address: String,
+    pub zmq_last_cursor: u64,
+    pub zmq_events_seen: u64,
+    pub zmq_last_topic: Option<String>,
+    pub zmq_last_event_at: Option<u64>,
 }
 
 impl State {
@@ -132,6 +147,14 @@ impl State {
             dashboard_in_flight: false,
             dashboard_error: None,
             dashboard_selected_peer_id: None,
+            dashboard_pending_partial: None,
+            dashboard_last_refresh_at: None,
+            zmq_connected: false,
+            zmq_connected_address: String::new(),
+            zmq_last_cursor: 0,
+            zmq_events_seen: 0,
+            zmq_last_topic: None,
+            zmq_last_event_at: None,
         };
 
         let startup_zmq = state.runtime_config.zmq_address.trim().to_string();

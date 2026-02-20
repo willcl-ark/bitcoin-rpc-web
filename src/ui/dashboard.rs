@@ -5,7 +5,36 @@ use crate::app::message::Message;
 use crate::app::state::State;
 
 pub fn view(state: &State) -> Element<'_, Message> {
-    let mut left = column![text("Dashboard").size(26)].spacing(10);
+    let zmq_status = if state.zmq_connected {
+        format!("connected ({})", state.zmq_connected_address)
+    } else if state.zmq_connected_address.is_empty() {
+        "disabled".to_string()
+    } else {
+        format!("disconnected ({})", state.zmq_connected_address)
+    };
+
+    let mut left = column![
+        text("Dashboard").size(26),
+        card(
+            "ZMQ Feed",
+            vec![
+                format!("status: {zmq_status}"),
+                format!("events seen: {}", state.zmq_events_seen),
+                format!(
+                    "last topic: {}",
+                    state.zmq_last_topic.as_deref().unwrap_or("-")
+                ),
+                format!(
+                    "last event unix: {}",
+                    state
+                        .zmq_last_event_at
+                        .map(|v| v.to_string())
+                        .unwrap_or_else(|| "-".to_string())
+                ),
+            ],
+        )
+    ]
+    .spacing(10);
 
     if state.dashboard_in_flight {
         left = left.push(text("Refreshing..."));

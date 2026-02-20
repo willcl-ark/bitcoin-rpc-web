@@ -1,4 +1,4 @@
-use crate::app::state::Tab;
+use crate::app::state::{DashboardPartialSet, Tab};
 use crate::core::dashboard_service::DashboardSnapshot;
 use crate::core::rpc_client::RpcConfig;
 
@@ -28,4 +28,6 @@ pub enum Message {
     DashboardTick,
     DashboardLoaded(Result<DashboardSnapshot, String>),
     DashboardPeerSelected(i64),
+    DashboardPartialRefreshRequested(DashboardPartialSet),
+    ZmqPollTick,
 }

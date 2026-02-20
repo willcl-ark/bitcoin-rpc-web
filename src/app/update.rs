@@ -1,8 +1,9 @@
 use iced::Task;
 use serde_json::Value;
+use std::time::{Duration, Instant};
 
 use crate::app::message::Message;
-use crate::app::state::{ConfigForm, State};
+use crate::app::state::{ConfigForm, DashboardPartialSet, State};
 use crate::core::config_store::ConfigStore;
 use crate::core::dashboard_service::{DashboardService, DashboardSnapshot};
 use crate::core::rpc_client::{
@@ -10,6 +11,8 @@ use crate::core::rpc_client::{
     is_safe_rpc_host,
 };
 use crate::zmq::{start_zmq_subscriber, stop_zmq_subscriber};
+
+const ZMQ_REFRESH_DEBOUNCE_MS: u64 = 800;
 
 pub fn update(state: &mut State, message: Message) -> Task<Message> {
     match message {
@@ -231,9 +234,7 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
             if state.dashboard_in_flight {
                 return Task::none();
             }
-            state.dashboard_in_flight = true;
-            let client = state.rpc_client.clone();
-            return Task::perform(load_dashboard(client), Message::DashboardLoaded);
+            return start_dashboard_refresh(state);
         }
         Message::DashboardLoaded(result) => {
             state.dashboard_in_flight = false;
@@ -252,13 +253,100 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
                     state.dashboard_error = Some(error);
                 }
             }
+
+            if let Some(partial) = state.dashboard_pending_partial
+                && can_run_debounced_refresh(state)
+            {
+                state.dashboard_pending_partial = None;
+                return Task::perform(
+                    async move { partial },
+                    Message::DashboardPartialRefreshRequested,
+                );
+            }
         }
         Message::DashboardPeerSelected(peer_id) => {
             state.dashboard_selected_peer_id = Some(peer_id);
         }
+        Message::DashboardPartialRefreshRequested(_partial) => {
+            if state.dashboard_in_flight {
+                return Task::none();
+            }
+            return start_dashboard_refresh(state);
+        }
+        Message::ZmqPollTick => {
+            poll_zmq_feed(state);
+            if let Some(partial) = state.dashboard_pending_partial
+                && !state.dashboard_in_flight
+                && can_run_debounced_refresh(state)
+            {
+                state.dashboard_pending_partial = None;
+                return Task::perform(
+                    async move { partial },
+                    Message::DashboardPartialRefreshRequested,
+                );
+            }
+        }
     }
 
     Task::none()
+}
+
+fn start_dashboard_refresh(state: &mut State) -> Task<Message> {
+    state.dashboard_in_flight = true;
+    state.dashboard_last_refresh_at = Some(Instant::now());
+    let client = state.rpc_client.clone();
+    Task::perform(load_dashboard(client), Message::DashboardLoaded)
+}
+
+fn can_run_debounced_refresh(state: &State) -> bool {
+    state
+        .dashboard_last_refresh_at
+        .is_none_or(|t| t.elapsed() >= Duration::from_millis(ZMQ_REFRESH_DEBOUNCE_MS))
+}
+
+fn poll_zmq_feed(state: &mut State) {
+    let mut saw_hashblock = false;
+    let mut saw_hashtx = false;
+    let mut next_cursor = state.zmq_last_cursor;
+
+    {
+        let zmq_state = state.zmq_state.state.lock().expect("zmq state lock");
+        state.zmq_connected = zmq_state.connected;
+        state.zmq_connected_address = zmq_state.address.clone();
+
+        for message in zmq_state.messages.iter() {
+            if message.cursor <= state.zmq_last_cursor {
+                continue;
+            }
+
+            next_cursor = next_cursor.max(message.cursor);
+            state.zmq_events_seen = state.zmq_events_seen.saturating_add(1);
+            state.zmq_last_topic = Some(message.topic.clone());
+            state.zmq_last_event_at = Some(message.timestamp);
+
+            match message.topic.as_str() {
+                "hashblock" => saw_hashblock = true,
+                "hashtx" => saw_hashtx = true,
+                _ => {}
+            }
+        }
+    }
+
+    state.zmq_last_cursor = next_cursor;
+
+    if saw_hashblock {
+        merge_pending_partial(state, DashboardPartialSet::ChainAndMempool);
+    } else if saw_hashtx {
+        merge_pending_partial(state, DashboardPartialSet::MempoolOnly);
+    }
+}
+
+fn merge_pending_partial(state: &mut State, next: DashboardPartialSet) {
+    state.dashboard_pending_partial = Some(match (state.dashboard_pending_partial, next) {
+        (Some(DashboardPartialSet::ChainAndMempool), _) => DashboardPartialSet::ChainAndMempool,
+        (_, DashboardPartialSet::ChainAndMempool) => DashboardPartialSet::ChainAndMempool,
+        _ => DashboardPartialSet::MempoolOnly,
+    });
 }
 
 fn clear_form_feedback(state: &mut State) {
@@ -373,6 +461,12 @@ fn apply_zmq_runtime(state: &mut State, previous_address: &str) {
     }
 
     if current.is_empty() {
+        state.zmq_connected = false;
+        state.zmq_connected_address.clear();
+        state.zmq_last_cursor = 0;
+        state.zmq_last_topic = None;
+        state.zmq_last_event_at = None;
+        state.dashboard_pending_partial = None;
         return;
     }
 
