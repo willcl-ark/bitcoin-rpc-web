@@ -1,5 +1,6 @@
 use std::fs;
 use std::io;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::core::rpc_client::RpcConfig;
@@ -37,8 +38,49 @@ impl ConfigStore {
 
         let bytes = serde_json::to_vec_pretty(config)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        fs::write(&self.path, bytes)
+
+        atomic_write_secure(&self.path, &bytes)
     }
+}
+
+fn atomic_write_secure(path: &Path, data: &[u8]) -> io::Result<()> {
+    let parent = path.parent().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidInput, "config path has no parent")
+    })?;
+
+    let file_name = path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy();
+    let tmp_path = parent.join(format!(".{file_name}.tmp"));
+
+    {
+        let mut file = create_secure_file(&tmp_path)?;
+        file.write_all(data)?;
+        file.sync_all()?;
+    }
+
+    fs::rename(&tmp_path, path)
+}
+
+#[cfg(unix)]
+fn create_secure_file(path: &Path) -> io::Result<fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)
+}
+
+#[cfg(not(unix))]
+fn create_secure_file(path: &Path) -> io::Result<fs::File> {
+    fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(path)
 }
 
 fn default_config_path() -> io::Result<PathBuf> {
@@ -105,6 +147,32 @@ mod tests {
         let loaded = store.load().expect("config should load");
 
         assert_eq!(loaded, config);
+
+        cleanup(path);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn save_creates_file_with_mode_600() {
+        use std::os::unix::fs::MetadataExt;
+
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time must move forward")
+            .as_nanos();
+
+        let path = std::env::temp_dir().join(format!("bitcoin-rpc-web-perms-{unique}.json"));
+        let store = ConfigStore { path: path.clone() };
+
+        store
+            .save(&RpcConfig::default())
+            .expect("config should save");
+
+        let mode = std::fs::metadata(&path)
+            .expect("file should exist")
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600, "config file should be owner-only");
 
         cleanup(path);
     }
