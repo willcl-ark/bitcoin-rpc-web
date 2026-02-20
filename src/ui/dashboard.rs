@@ -12,6 +12,8 @@ use crate::core::dashboard_service::PeerSummary;
 use crate::ui::components;
 
 pub fn view(state: &State) -> Element<'_, Message> {
+    let fs = state.config.runtime.font_size;
+
     let zmq_status = if state.zmq.connected {
         format!("connected ({})", state.zmq.connected_address)
     } else if state.zmq.connected_address.is_empty() {
@@ -32,7 +34,8 @@ pub fn view(state: &State) -> Element<'_, Message> {
                         "verification",
                         format!("{:.4}", snapshot.chain.verification_progress)
                     ),
-                ]
+                ],
+                fs,
             )
             .width(iced::Length::FillPortion(1)),
             summary_card(
@@ -42,7 +45,8 @@ pub fn view(state: &State) -> Element<'_, Message> {
                     ("bytes", snapshot.mempool.bytes.to_string()),
                     ("usage", snapshot.mempool.usage.to_string()),
                     ("max", snapshot.mempool.maxmempool.to_string()),
-                ]
+                ],
+                fs,
             )
             .width(iced::Length::FillPortion(1)),
             summary_card(
@@ -53,7 +57,8 @@ pub fn view(state: &State) -> Element<'_, Message> {
                     ("protocol", snapshot.network.protocol_version.to_string()),
                     ("connections", snapshot.network.connections.to_string()),
                     ("uptime", format!("{}s", snapshot.uptime_secs)),
-                ]
+                ],
+                fs,
             )
             .width(iced::Length::FillPortion(1)),
             summary_card(
@@ -67,17 +72,22 @@ pub fn view(state: &State) -> Element<'_, Message> {
                         "sent",
                         format!("{} bytes", snapshot.traffic.total_bytes_sent)
                     ),
-                ]
+                ],
+                fs,
             )
             .width(iced::Length::FillPortion(1)),
         ]
         .spacing(8)
         .into()
     } else {
-        container(text("NO DASHBOARD DATA YET").color(components::MUTED))
-            .style(components::card_style())
-            .padding(14)
-            .into()
+        container(
+            text("NO DASHBOARD DATA YET")
+                .size(fs)
+                .color(components::MUTED),
+        )
+        .style(components::card_style())
+        .padding(14)
+        .into()
     };
 
     let main_body = container(peer_table(state))
@@ -112,18 +122,22 @@ pub fn view(state: &State) -> Element<'_, Message> {
                     .unwrap_or_else(|| "-".to_string()),
             ),
         ],
+        fs,
     );
 
     let mut live_rows = column![
         row![
             text("TOPIC")
+                .size(fs)
                 .width(iced::Length::Fixed(110.0))
                 .color(components::MUTED),
             text("EVENT")
+                .size(fs)
                 .width(Fill)
                 .color(components::MUTED)
                 .wrapping(Wrapping::None),
             text("TIME")
+                .size(fs)
                 .width(iced::Length::Fixed(95.0))
                 .align_x(alignment::Horizontal::Right)
                 .color(components::MUTED)
@@ -134,17 +148,26 @@ pub fn view(state: &State) -> Element<'_, Message> {
     .spacing(2);
 
     if state.zmq.recent_events.is_empty() {
-        live_rows = live_rows.push(text("No ZMQ events yet.").color(components::MUTED));
+        live_rows = live_rows.push(
+            text("No ZMQ events yet.")
+                .size(fs)
+                .color(components::MUTED),
+        );
     } else {
         for evt in state.zmq.recent_events.iter().rev() {
             live_rows = live_rows.push(
                 row![
                     text(&evt.topic)
+                        .size(fs)
                         .color(components::ACCENT)
                         .width(iced::Length::Fixed(110.0))
                         .wrapping(Wrapping::None),
-                    text(&evt.event_hash).width(Fill).wrapping(Wrapping::None),
+                    text(&evt.event_hash)
+                        .size(fs)
+                        .width(Fill)
+                        .wrapping(Wrapping::None),
                     text(format_event_time(evt.timestamp))
+                        .size(fs)
                         .width(iced::Length::Fixed(95.0))
                         .align_x(alignment::Horizontal::Right)
                         .wrapping(Wrapping::None),
@@ -162,7 +185,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
                 .width(iced::Length::FillPortion(2)),
             container(
                 column![
-                    text("LIVE EVENTS").size(14).color(components::ACCENT),
+                    text("LIVE EVENTS").size(fs).color(components::ACCENT),
                     scrollable(live_rows)
                         .height(160)
                         .direction(scrollable::Direction::Vertical(
@@ -186,9 +209,11 @@ pub fn view(state: &State) -> Element<'_, Message> {
 
     let mut root = column![
         row![
-            text("DASHBOARD").size(24).color(components::ACCENT),
+            text("DASHBOARD")
+                .size(fs + 10)
+                .color(components::ACCENT),
             text("TELEMETRY + PEERING")
-                .size(12)
+                .size(fs.saturating_sub(2))
                 .color(components::AMBER)
         ]
         .spacing(12),
@@ -201,7 +226,11 @@ pub fn view(state: &State) -> Element<'_, Message> {
     .width(Fill);
 
     if let Some(error) = &state.dashboard.error {
-        root = root.push(text(format!("ERR: {error}")).color(components::ERROR_RED));
+        root = root.push(
+            text(format!("ERR: {error}"))
+                .size(fs)
+                .color(components::ERROR_RED),
+        );
     }
 
     container(root).padding(12).width(Fill).height(Fill).into()
@@ -209,23 +238,24 @@ pub fn view(state: &State) -> Element<'_, Message> {
 
 fn peer_table(state: &State) -> Element<'_, Message> {
     let level = state.dashboard.netinfo_level;
+    let fs = state.config.runtime.font_size;
 
     macro_rules! cell {
         ($content:expr, $w:expr) => {
             text(($content).to_string())
-                .size(14)
+                .size(fs)
                 .width(iced::Length::Fixed($w))
                 .wrapping(Wrapping::None)
         };
     }
 
-    let mut level_btns = row![text("PEERS").size(15).color(components::ACCENT)]
+    let mut level_btns = row![text("PEERS").size(fs + 1).color(components::ACCENT)]
         .spacing(6)
         .align_y(alignment::Vertical::Center);
     for i in 0..=4u8 {
         level_btns = level_btns.push(
             button(
-                text(i.to_string()).size(14).color(if i == level {
+                text(i.to_string()).size(fs).color(if i == level {
                     components::ACCENT
                 } else {
                     components::MUTED
@@ -327,13 +357,16 @@ fn peer_table(state: &State) -> Element<'_, Message> {
                     .push(cell!(peer.id, 38.0));
                 if level == 2 || level == 4 {
                     data_row = data_row.push(
-                        text(peer.addr.clone()).size(14).width(Fill).wrapping(Wrapping::None),
+                        text(peer.addr.clone())
+                            .size(fs)
+                            .width(Fill)
+                            .wrapping(Wrapping::None),
                     );
                 }
                 if level == 3 || level == 4 {
                     data_row = data_row.push(
                         text(format!("{}{}", peer.version, peer.subver))
-                            .size(14)
+                            .size(fs)
                             .width(Fill)
                             .wrapping(Wrapping::None),
                     );
@@ -349,9 +382,9 @@ fn peer_table(state: &State) -> Element<'_, Message> {
             }
         }
 
-        content = content.push(connection_counts(&snapshot.peers));
+        content = content.push(connection_counts(&snapshot.peers, fs));
     } else {
-        content = content.push(text("No peer data").color(components::MUTED));
+        content = content.push(text("No peer data").size(fs).color(components::MUTED));
     }
 
     let detail_panel = if let Some(snapshot) = &state.dashboard.snapshot
@@ -363,14 +396,14 @@ fn peer_table(state: &State) -> Element<'_, Message> {
                 column![
                     row![
                         text(format!("PEER {selected_id} DETAIL"))
-                            .size(14)
+                            .size(fs)
                             .color(components::ACCENT),
-                        button(text("Close").color(components::MUTED))
+                        button(text("Close").size(fs).color(components::MUTED))
                             .style(components::utility_button_style(false))
                             .on_press(Message::DashboardPeerDetailClosed),
                     ]
                     .spacing(8),
-                    scrollable(peer_detail_grid(raw)).height(170),
+                    scrollable(peer_detail_grid(raw, fs)).height(170),
                 ]
                 .spacing(6),
             )
@@ -393,19 +426,20 @@ fn peer_table(state: &State) -> Element<'_, Message> {
 fn summary_card<'a>(
     title: &'a str,
     lines: Vec<(&'a str, String)>,
+    fs: u16,
 ) -> iced::widget::Container<'a, Message> {
     let mut content = column![
         text(title.to_uppercase())
-            .size(14)
+            .size(fs)
             .color(components::ACCENT)
     ]
     .spacing(3);
     for (key, value) in lines {
         content = content.push(
             row![
-                text(format!("{key}:")).color(components::MUTED),
+                text(format!("{key}:")).size(fs).color(components::MUTED),
                 horizontal_space(),
-                text(value).color(components::TEXT)
+                text(value).size(fs).color(components::TEXT)
             ]
             .spacing(3),
         );
@@ -430,7 +464,8 @@ fn sort_header<'a>(
     } else {
         ""
     };
-    button(text(format!("{label}{marker}")).size(14).color(if active {
+    let fs = state.config.runtime.font_size;
+    button(text(format!("{label}{marker}")).size(fs).color(if active {
         components::ACCENT
     } else {
         components::MUTED
@@ -479,10 +514,11 @@ fn format_event_time(timestamp: u64) -> String {
         .unwrap_or_else(|| timestamp.to_string())
 }
 
-fn peer_detail_grid<'a>(raw: &'a Value) -> Element<'a, Message> {
+fn peer_detail_grid<'a>(raw: &'a Value, fs: u16) -> Element<'a, Message> {
     let items = peer_detail_items(raw);
     if items.is_empty() {
         return text("No peer detail available.")
+            .size(fs)
             .color(components::MUTED)
             .into();
     }
@@ -494,8 +530,12 @@ fn peer_detail_grid<'a>(raw: &'a Value) -> Element<'a, Message> {
             line = line.push(
                 container(
                     column![
-                        text(key.to_uppercase()).size(11).color(components::MUTED),
-                        text(value.clone()).size(12).color(components::TEXT)
+                        text(key.to_uppercase())
+                            .size(fs.saturating_sub(3))
+                            .color(components::MUTED),
+                        text(value.clone())
+                            .size(fs.saturating_sub(2))
+                            .color(components::TEXT)
                     ]
                     .spacing(1),
                 )
@@ -646,7 +686,7 @@ fn relative_mins(now: i64, ts: i64) -> String {
     ((now - ts) / 60).to_string()
 }
 
-fn connection_counts<'a>(peers: &[PeerSummary]) -> Element<'a, Message> {
+fn connection_counts<'a>(peers: &[PeerSummary], fs: u16) -> Element<'a, Message> {
     let known_nets = ["ipv4", "ipv6", "onion", "i2p", "cjdns"];
     let active_nets: Vec<&str> = known_nets
         .iter()
@@ -669,7 +709,7 @@ fn connection_counts<'a>(peers: &[PeerSummary]) -> Element<'a, Message> {
     for net in &active_nets {
         header = header.push(
             text(*net)
-                .size(14)
+                .size(fs)
                 .color(components::MUTED)
                 .width(iced::Length::Fixed(w_col))
                 .align_x(alignment::Horizontal::Right),
@@ -678,14 +718,14 @@ fn connection_counts<'a>(peers: &[PeerSummary]) -> Element<'a, Message> {
     header = header
         .push(
             text("total")
-                .size(14)
+                .size(fs)
                 .color(components::MUTED)
                 .width(iced::Length::Fixed(w_col))
                 .align_x(alignment::Horizontal::Right),
         )
         .push(
             text("block")
-                .size(14)
+                .size(fs)
                 .color(components::MUTED)
                 .width(iced::Length::Fixed(w_col))
                 .align_x(alignment::Horizontal::Right),
@@ -697,7 +737,7 @@ fn connection_counts<'a>(peers: &[PeerSummary]) -> Element<'a, Message> {
         let mut r = row![].spacing(2);
         r = r.push(
             text(label)
-                .size(14)
+                .size(fs)
                 .color(components::MUTED)
                 .width(iced::Length::Fixed(w_label)),
         );
@@ -707,7 +747,7 @@ fn connection_counts<'a>(peers: &[PeerSummary]) -> Element<'a, Message> {
             total += c;
             r = r.push(
                 text(c.to_string())
-                    .size(14)
+                    .size(fs)
                     .color(components::TEXT)
                     .width(iced::Length::Fixed(w_col))
                     .align_x(alignment::Horizontal::Right),
@@ -715,7 +755,7 @@ fn connection_counts<'a>(peers: &[PeerSummary]) -> Element<'a, Message> {
         }
         r = r.push(
             text(total.to_string())
-                .size(14)
+                .size(fs)
                 .color(components::TEXT)
                 .width(iced::Length::Fixed(w_col))
                 .align_x(alignment::Horizontal::Right),
@@ -734,7 +774,7 @@ fn connection_counts<'a>(peers: &[PeerSummary]) -> Element<'a, Message> {
             } else {
                 String::new()
             })
-            .size(14)
+            .size(fs)
             .color(components::TEXT)
             .width(iced::Length::Fixed(w_col))
             .align_x(alignment::Horizontal::Right),

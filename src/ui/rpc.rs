@@ -8,6 +8,8 @@ use crate::app::state::State;
 use crate::ui::components;
 
 pub fn view(state: &State) -> Element<'_, Message> {
+    let fs = state.config.runtime.font_size;
+
     let method_list = if let Some(schema) = &state.rpc.schema {
         let mut grouped: BTreeMap<String, Vec<_>> = BTreeMap::new();
         for method in schema.search(&state.rpc.search).into_iter().take(400) {
@@ -17,10 +19,10 @@ pub fn view(state: &State) -> Element<'_, Message> {
                 .push(method);
         }
 
-        let mut list = column![text("METHOD GROUPS").size(16).color(components::ACCENT)].spacing(6);
+        let mut list = column![text("METHOD GROUPS").size(fs + 2).color(components::ACCENT)].spacing(6);
 
         if grouped.is_empty() {
-            list = list.push(text("No methods match current search.").color(components::MUTED));
+            list = list.push(text("No methods match current search.").size(fs).color(components::MUTED));
         }
 
         for (category, mut methods) in grouped {
@@ -30,7 +32,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
             let category_label =
                 format!("{marker} {} ({})", category.to_uppercase(), methods.len());
             list = list.push(
-                button(text(category_label))
+                button(text(category_label).size(fs))
                     .width(Fill)
                     .style(components::utility_button_style(!collapsed))
                     .padding([4, 8])
@@ -49,7 +51,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
                     format!("  {}", method.name)
                 };
                 list = list.push(
-                    button(text(label))
+                    button(text(label).size(fs))
                         .width(Fill)
                         .style(components::row_button_style(selected))
                         .padding([4, 8])
@@ -59,7 +61,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
         }
         scrollable(list).height(Fill)
     } else {
-        scrollable(column![text("Schema unavailable")])
+        scrollable(column![text("Schema unavailable").size(fs)])
     };
 
     let selected_summary = state
@@ -88,10 +90,10 @@ pub fn view(state: &State) -> Element<'_, Message> {
 
     let mut right = column![
         text("RPC EXECUTION CONSOLE")
-            .size(24)
+            .size(fs + 10)
             .color(components::ACCENT),
         text("SEARCH, INSPECT, EXECUTE")
-            .size(12)
+            .size(fs.saturating_sub(2))
             .color(components::MUTED),
         text_input("Search methods", &state.rpc.search)
             .on_input(Message::RpcSearchChanged)
@@ -100,8 +102,9 @@ pub fn view(state: &State) -> Element<'_, Message> {
         text(format!(
             "Selected method: {}",
             state.rpc.selected_method.as_deref().unwrap_or("(none)")
-        )),
-        text(selected_summary).color(components::MUTED),
+        ))
+        .size(fs),
+        text(selected_summary).size(fs).color(components::MUTED),
         checkbox("Batch mode", state.rpc.batch_mode)
             .on_toggle(Message::RpcBatchModeToggled)
             .style(components::checkbox_style()),
@@ -109,7 +112,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
     .spacing(10);
 
     if state.rpc.batch_mode {
-        right = right.push(text("Batch request JSON array")).push(
+        right = right.push(text("Batch request JSON array").size(fs)).push(
             text_input(
                 r#"[{"method":"getblockchaininfo","params":[]}]"#,
                 &state.rpc.batch_input,
@@ -119,7 +122,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
             .style(components::input_style()),
         );
     } else {
-        right = right.push(text("Params JSON")).push(
+        right = right.push(text("Params JSON").size(fs)).push(
             text_input("[]", &state.rpc.params_input)
                 .on_input(Message::RpcParamsChanged)
                 .padding(8)
@@ -130,16 +133,24 @@ pub fn view(state: &State) -> Element<'_, Message> {
     right = right.push(execute_button);
 
     if let Some(error) = &state.rpc.schema_error {
-        right = right.push(text(format!("Schema error: {error}")).color(components::ERROR_RED));
+        right = right.push(
+            text(format!("Schema error: {error}"))
+                .size(fs)
+                .color(components::ERROR_RED),
+        );
     }
     if let Some(error) = &state.rpc.error {
-        right = right.push(text(format!("ERR: {error}")).color(components::ERROR_RED));
+        right = right.push(
+            text(format!("ERR: {error}"))
+                .size(fs)
+                .color(components::ERROR_RED),
+        );
     }
     if let Some(response) = &state.rpc.response {
         right = right
-            .push(text("RESPONSE").size(14).color(components::ACCENT))
+            .push(text("RESPONSE").size(fs).color(components::ACCENT))
             .push(
-                container(scrollable(text(response).size(14).color(components::MUTED)))
+                container(scrollable(text(response).size(fs).color(components::MUTED)))
                     .style(components::card_style())
                     .padding(10),
             );

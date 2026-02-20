@@ -98,6 +98,7 @@ mod tests {
             poll_interval_secs: 11,
             zmq_address: "tcp://127.0.0.1:29000".to_string(),
             zmq_buffer_limit: 2048,
+            font_size: 14,
         };
 
         store.save(&config).expect("config should save");

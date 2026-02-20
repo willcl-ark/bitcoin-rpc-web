@@ -11,22 +11,26 @@ pub fn view(state: &State) -> Element<'_, Message> {
     }
 
     let snap = &state.music_snapshot;
+    let fs = state.config.runtime.font_size;
 
-    let prev = transport_button("|<", Message::MusicPrev);
+    let prev = transport_button("|<", Message::MusicPrev, fs);
     let play_pause = transport_button(
         if snap.playing { "||" } else { ">" },
         Message::MusicPlayPause,
+        fs,
     );
-    let next = transport_button(">|", Message::MusicNext);
+    let next = transport_button(">|", Message::MusicNext, fs);
 
-    let track = text(&snap.track_name).size(12).color(MUTED);
+    let track = text(&snap.track_name)
+        .size(fs.saturating_sub(2))
+        .color(MUTED);
 
     let vol_slider = slider(0.0..=1.0, snap.volume, Message::MusicSetVolume)
         .width(100)
         .step(0.01);
 
     let mute_label = if snap.muted { "M" } else { "V" };
-    let mute_btn = button(text(mute_label).size(11).color(TEXT))
+    let mute_btn = button(text(mute_label).size(fs.saturating_sub(3)).color(TEXT))
         .style(components::utility_button_style(snap.muted))
         .padding([2, 6])
         .on_press(Message::MusicToggleMute);
@@ -42,8 +46,8 @@ pub fn view(state: &State) -> Element<'_, Message> {
     .into()
 }
 
-fn transport_button(label: &str, msg: Message) -> Element<'_, Message> {
-    button(text(label).size(12).color(TEXT))
+fn transport_button(label: &str, msg: Message, fs: u16) -> Element<'_, Message> {
+    button(text(label).size(fs.saturating_sub(2)).color(TEXT))
         .style(components::utility_button_style(false))
         .padding([2, 8])
         .on_press(msg)

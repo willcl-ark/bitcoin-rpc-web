@@ -7,8 +7,8 @@ use crate::app::state::{ConfigForm, DashboardPartialSet, State, ZmqUiEvent};
 use crate::core::config_store::ConfigStore;
 use crate::core::dashboard_service::{DashboardPartialUpdate, DashboardService, DashboardSnapshot};
 use crate::core::rpc_client::{
-    MAX_ZMQ_BUFFER_LIMIT, MIN_ZMQ_BUFFER_LIMIT, RpcClient, RpcConfig, allow_insecure,
-    is_safe_rpc_host,
+    MAX_FONT_SIZE, MAX_ZMQ_BUFFER_LIMIT, MIN_FONT_SIZE, MIN_ZMQ_BUFFER_LIMIT, RpcClient,
+    RpcConfig, allow_insecure, is_safe_rpc_host,
 };
 use crate::music::MusicRuntime;
 use crate::zmq::{start_zmq_subscriber, stop_zmq_subscriber};
@@ -29,6 +29,7 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
         | Message::ConfigPollIntervalChanged(..)
         | Message::ConfigZmqAddressChanged(..)
         | Message::ConfigZmqBufferLimitChanged(..)
+        | Message::ConfigFontSizeChanged(..)
         | Message::ConfigConnectPressed
         | Message::ConfigConnectFinished(..)
         | Message::ConfigReloadPressed
@@ -93,6 +94,10 @@ fn handle_config(state: &mut State, message: Message) -> Task<Message> {
         }
         Message::ConfigZmqBufferLimitChanged(value) => {
             state.config.form.zmq_buffer_limit = value;
+            clear_form_feedback(state);
+        }
+        Message::ConfigFontSizeChanged(value) => {
+            state.config.form.font_size = value;
             clear_form_feedback(state);
         }
         Message::ConfigConnectPressed => {
@@ -546,6 +551,13 @@ fn parse_config_form(form: &ConfigForm) -> Result<RpcConfig, String> {
         .map_err(|_| "ZMQ buffer limit must be an integer".to_string())?
         .clamp(MIN_ZMQ_BUFFER_LIMIT, MAX_ZMQ_BUFFER_LIMIT);
 
+    let font_size = form
+        .font_size
+        .trim()
+        .parse::<u16>()
+        .map_err(|_| "Font size must be a positive integer".to_string())?
+        .clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
+
     Ok(RpcConfig {
         url: url.to_string(),
         user: form.user.clone(),
@@ -554,6 +566,7 @@ fn parse_config_form(form: &ConfigForm) -> Result<RpcConfig, String> {
         poll_interval_secs,
         zmq_address: form.zmq_address.trim().to_string(),
         zmq_buffer_limit,
+        font_size,
     })
 }
 

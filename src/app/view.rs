@@ -6,15 +6,20 @@ use crate::app::state::{State, Tab};
 use crate::ui::components;
 
 pub fn view(state: &State) -> Element<'_, Message> {
+    let fs = state.config.runtime.font_size;
     let nav = column![
         text("BITCOIN RPC // MCU")
-            .size(21)
+            .size(fs + 7)
             .color(components::ACCENT),
-        text("NODE CONTROL").size(11).color(components::MUTED),
-        text("SECTOR NAV").size(10).color(components::AMBER),
-        nav_button("DASHBOARD", Tab::Dashboard, state.active_tab),
-        nav_button("RPC", Tab::Rpc, state.active_tab),
-        nav_button("CONFIG", Tab::Config, state.active_tab),
+        text("NODE CONTROL")
+            .size(fs.saturating_sub(3))
+            .color(components::MUTED),
+        text("SECTOR NAV")
+            .size(fs.saturating_sub(4))
+            .color(components::AMBER),
+        nav_button("DASHBOARD", Tab::Dashboard, state.active_tab, fs),
+        nav_button("RPC", Tab::Rpc, state.active_tab, fs),
+        nav_button("CONFIG", Tab::Config, state.active_tab, fs),
     ]
     .spacing(6)
     .padding(12)
@@ -47,8 +52,8 @@ pub fn view(state: &State) -> Element<'_, Message> {
     .into()
 }
 
-fn nav_button(label: &'static str, tab: Tab, active_tab: Tab) -> Element<'static, Message> {
-    button(text(format!("[{}]", label)))
+fn nav_button(label: &'static str, tab: Tab, active_tab: Tab, fs: u16) -> Element<'static, Message> {
+    button(text(format!("[{}]", label)).size(fs))
         .width(Fill)
         .style(components::nav_button_style(tab == active_tab))
         .padding([6, 8])

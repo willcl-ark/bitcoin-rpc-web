@@ -8,6 +8,14 @@ pub const DEFAULT_ZMQ_BUFFER_LIMIT: usize = 5000;
 pub const MIN_ZMQ_BUFFER_LIMIT: usize = 50;
 pub const MAX_ZMQ_BUFFER_LIMIT: usize = 100000;
 
+pub const DEFAULT_FONT_SIZE: u16 = 14;
+pub const MIN_FONT_SIZE: u16 = 8;
+pub const MAX_FONT_SIZE: u16 = 32;
+
+fn default_font_size() -> u16 {
+    DEFAULT_FONT_SIZE
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RpcConfig {
     pub url: String,
@@ -17,6 +25,8 @@ pub struct RpcConfig {
     pub poll_interval_secs: u64,
     pub zmq_address: String,
     pub zmq_buffer_limit: usize,
+    #[serde(default = "default_font_size")]
+    pub font_size: u16,
 }
 
 impl Default for RpcConfig {
@@ -29,6 +39,7 @@ impl Default for RpcConfig {
             poll_interval_secs: 5,
             zmq_address: String::new(),
             zmq_buffer_limit: DEFAULT_ZMQ_BUFFER_LIMIT,
+            font_size: DEFAULT_FONT_SIZE,
         }
     }
 }

@@ -53,6 +53,7 @@ pub struct ConfigForm {
     pub poll_interval_secs: String,
     pub zmq_address: String,
     pub zmq_buffer_limit: String,
+    pub font_size: String,
 }
 
 impl From<&RpcConfig> for ConfigForm {
@@ -65,6 +66,7 @@ impl From<&RpcConfig> for ConfigForm {
             poll_interval_secs: config.poll_interval_secs.to_string(),
             zmq_address: config.zmq_address.clone(),
             zmq_buffer_limit: config.zmq_buffer_limit.to_string(),
+            font_size: config.font_size.to_string(),
         }
     }
 }

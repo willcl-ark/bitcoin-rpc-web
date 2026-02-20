@@ -12,6 +12,7 @@ pub enum Message {
     ConfigPollIntervalChanged(String),
     ConfigZmqAddressChanged(String),
     ConfigZmqBufferLimitChanged(String),
+    ConfigFontSizeChanged(String),
     ConfigConnectPressed,
     ConfigConnectFinished(Result<RpcConfig, String>),
     ConfigReloadPressed,
