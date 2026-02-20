@@ -33,9 +33,16 @@ pub fn handle_dashboard(state: &mut State, message: Message) -> Task<Message> {
                     }
                     state.dashboard.snapshot = Some(snapshot);
                     state.dashboard.error = None;
+                    state.dashboard.consecutive_errors = 0;
                 }
                 Err(error) => {
-                    state.dashboard.error = Some(error);
+                    state.dashboard.consecutive_errors += 1;
+                    if state.dashboard.consecutive_errors >= 3 {
+                        state.dashboard.error =
+                            Some(format!("Connection lost \u{2014} retrying... ({error})"));
+                    } else {
+                        state.dashboard.error = Some(error);
+                    }
                 }
             }
             return schedule_pending_partial_if_ready(state);
@@ -85,12 +92,19 @@ pub fn handle_dashboard(state: &mut State, message: Message) -> Task<Message> {
                             }
                         }
                         state.dashboard.error = None;
+                        state.dashboard.consecutive_errors = 0;
                     } else {
                         return start_dashboard_refresh(state);
                     }
                 }
                 Err(error) => {
-                    state.dashboard.error = Some(error);
+                    state.dashboard.consecutive_errors += 1;
+                    if state.dashboard.consecutive_errors >= 3 {
+                        state.dashboard.error =
+                            Some(format!("Connection lost \u{2014} retrying... ({error})"));
+                    } else {
+                        state.dashboard.error = Some(error);
+                    }
                 }
             }
             return schedule_pending_partial_if_ready(state);
