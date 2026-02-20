@@ -23,8 +23,9 @@ pub enum DashboardPartialSet {
     ChainAndMempool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PeerSortField {
+    #[default]
     Id,
     Address,
     Subversion,

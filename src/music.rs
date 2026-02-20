@@ -161,7 +161,7 @@ mod imp {
     }
 
     pub(super) fn snapshot(runtime: &InnerRuntime) -> super::MusicSnapshot {
-        let s = runtime.state.lock().unwrap();
+        let s = runtime.state.lock().expect("music state lock");
         super::MusicSnapshot {
             track_name: s.track_name.clone(),
             playing: s.playing,
@@ -227,7 +227,7 @@ mod imp {
             loop {
                 match rx.recv_timeout(Duration::from_millis(500)) {
                     Ok(cmd) => {
-                        let mut s = st.lock().unwrap();
+                        let mut s = st.lock().expect("music state lock");
                         match cmd {
                             MusicCmd::PlayPause => {
                                 if s.playing {
@@ -272,7 +272,7 @@ mod imp {
                     }
                     Err(mpsc::RecvTimeoutError::Timeout) => {
                         if sink.empty() {
-                            let mut s = st.lock().unwrap();
+                            let mut s = st.lock().expect("music state lock");
                             s.current_track = (s.current_track + 1) % tunes.len();
                             s.track_name = tunes[s.current_track].name.to_string();
                             let vol = if s.muted { 0.0 } else { s.volume };

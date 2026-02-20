@@ -507,7 +507,7 @@ fn connection_type_color(kind: &str) -> Color {
         "inbound" => Color::from_rgb(0.30, 0.84, 1.0),
         "manual" => Color::from_rgb(0.96, 0.79, 0.27),
         "feeler" => Color::from_rgb(0.63, 0.83, 1.0),
-        "outbound-full-relay" => Color::from_rgb(0.20, 0.84, 0.46),
+        "outbound-full-relay" => components::GREEN,
         "block-relay-only" => Color::from_rgb(0.45, 0.76, 0.98),
         "addr-fetch" => Color::from_rgb(0.96, 0.70, 0.20),
         "private-broadcast" => Color::from_rgb(0.97, 0.54, 0.26),
@@ -550,7 +550,7 @@ fn subversion_color(subver: &str, scale: &[i64]) -> Color {
 
     let red = components::ERROR_RED;
     let orange = components::AMBER;
-    let green = Color::from_rgb(0.20, 0.84, 0.46);
+    let green = components::GREEN;
     let t = idx as f32 / (scale.len() - 1) as f32;
 
     if t <= 0.5 {
@@ -565,7 +565,7 @@ fn ping_color(ping_secs: Option<f64>) -> Color {
         return components::MUTED;
     };
 
-    let green = Color::from_rgb(0.20, 0.84, 0.46);
+    let green = components::GREEN;
     let orange = components::AMBER;
     let red = components::ERROR_RED;
 

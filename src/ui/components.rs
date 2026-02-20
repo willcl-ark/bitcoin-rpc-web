@@ -13,6 +13,7 @@ pub const ERROR_RED: Color = Color::from_rgb(0.95, 0.32, 0.29);
 pub const TEXT: Color = Color::from_rgb(0.81, 0.92, 0.98);
 pub const MUTED: Color = Color::from_rgb(0.44, 0.63, 0.75);
 pub const BORDER: Color = Color::from_rgb(0.08, 0.27, 0.36);
+pub const GREEN: Color = Color::from_rgb(0.20, 0.84, 0.46);
 pub const BORDER_HOT: Color = Color::from_rgb(0.14, 0.64, 0.74);
 
 pub fn mission_theme() -> Theme {

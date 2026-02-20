@@ -88,7 +88,7 @@ pub fn start_zmq_subscriber(address: &str, state: Arc<ZmqSharedState>) -> ZmqHan
 
         debug!(address = %addr, "connected ZMQ subscriber");
         {
-            let mut s = state.state.lock().unwrap();
+            let mut s = state.state.lock().expect("zmq state lock");
             s.connected = true;
             s.address = addr;
         }
@@ -117,7 +117,7 @@ pub fn start_zmq_subscriber(address: &str, state: Arc<ZmqSharedState>) -> ZmqHan
                 .unwrap_or_default()
                 .as_secs();
 
-            let mut s = state.state.lock().unwrap();
+            let mut s = state.state.lock().expect("zmq state lock");
             let limit = s.buffer_limit.clamp(
                 crate::core::rpc_client::MIN_ZMQ_BUFFER_LIMIT,
                 crate::core::rpc_client::MAX_ZMQ_BUFFER_LIMIT,
@@ -139,7 +139,7 @@ pub fn start_zmq_subscriber(address: &str, state: Arc<ZmqSharedState>) -> ZmqHan
         }
 
         {
-            let mut s = state.state.lock().unwrap();
+            let mut s = state.state.lock().expect("zmq state lock");
             mark_disconnected(&mut s);
         }
         state.changed.notify_all();

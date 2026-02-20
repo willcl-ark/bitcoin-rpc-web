@@ -164,15 +164,15 @@ impl DashboardService {
         let mempool = parse_mempool(&responses[2])?;
 
         let network = NetworkSummary {
-            version: i64_field(network, "version")?,
+            version: field(network, "version", Value::as_i64, "i64")?,
             subversion: string(network, "subversion")?,
-            protocol_version: i64_field(network, "protocolversion")?,
-            connections: i64_field(network, "connections")?,
+            protocol_version: field(network, "protocolversion", Value::as_i64, "i64")?,
+            connections: field(network, "connections", Value::as_i64, "i64")?,
         };
 
         let traffic = TrafficSummary {
-            total_bytes_recv: u64_field(traffic, "totalbytesrecv")?,
-            total_bytes_sent: u64_field(traffic, "totalbytessent")?,
+            total_bytes_recv: field(traffic, "totalbytesrecv", Value::as_u64, "u64")?,
+            total_bytes_sent: field(traffic, "totalbytessent", Value::as_u64, "u64")?,
         };
 
         let mut peer_summaries = Vec::new();
@@ -181,7 +181,7 @@ impl DashboardService {
             let Some(peer_object) = peer.as_object() else {
                 continue;
             };
-            let Some(id) = i64_field(peer_object, "id").ok() else {
+            let Some(id) = field(peer_object, "id", Value::as_i64, "i64").ok() else {
                 continue;
             };
 
@@ -189,7 +189,7 @@ impl DashboardService {
                 id,
                 addr: string(peer_object, "addr").unwrap_or_else(|_| "?".to_string()),
                 subver: string(peer_object, "subver").unwrap_or_else(|_| "unknown".to_string()),
-                inbound: bool_field(peer_object, "inbound").unwrap_or(false),
+                inbound: field(peer_object, "inbound", Value::as_bool, "bool").unwrap_or(false),
                 connection_type: string(peer_object, "connection_type")
                     .unwrap_or_else(|_| "unknown".to_string()),
                 ping_time: peer_object.get("pingtime").and_then(Value::as_f64),
@@ -216,9 +216,9 @@ fn parse_chain(value: &Value) -> Result<ChainSummary, RpcError> {
 
     Ok(ChainSummary {
         chain: string(blockchain, "chain")?,
-        blocks: u64_field(blockchain, "blocks")?,
-        headers: u64_field(blockchain, "headers")?,
-        verification_progress: f64_field(blockchain, "verificationprogress")?,
+        blocks: field(blockchain, "blocks", Value::as_u64, "u64")?,
+        headers: field(blockchain, "headers", Value::as_u64, "u64")?,
+        verification_progress: field(blockchain, "verificationprogress", Value::as_f64, "f64")?,
     })
 }
 
@@ -228,47 +228,26 @@ fn parse_mempool(value: &Value) -> Result<MempoolSummary, RpcError> {
     })?;
 
     Ok(MempoolSummary {
-        transactions: u64_field(mempool, "size")?,
-        bytes: u64_field(mempool, "bytes")?,
-        usage: u64_field(mempool, "usage")?,
-        maxmempool: u64_field(mempool, "maxmempool")?,
+        transactions: field(mempool, "size", Value::as_u64, "u64")?,
+        bytes: field(mempool, "bytes", Value::as_u64, "u64")?,
+        usage: field(mempool, "usage", Value::as_u64, "u64")?,
+        maxmempool: field(mempool, "maxmempool", Value::as_u64, "u64")?,
     })
 }
 
-fn string(object: &serde_json::Map<String, Value>, key: &str) -> Result<String, RpcError> {
-    object
-        .get(key)
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned)
-        .ok_or_else(|| RpcError::InvalidResponse(format!("missing string field: {key}")))
+fn field<T>(
+    obj: &serde_json::Map<String, Value>,
+    key: &str,
+    extract: impl FnOnce(&Value) -> Option<T>,
+    label: &str,
+) -> Result<T, RpcError> {
+    obj.get(key)
+        .and_then(extract)
+        .ok_or_else(|| RpcError::InvalidResponse(format!("missing {label} field: {key}")))
 }
 
-fn u64_field(object: &serde_json::Map<String, Value>, key: &str) -> Result<u64, RpcError> {
-    object
-        .get(key)
-        .and_then(Value::as_u64)
-        .ok_or_else(|| RpcError::InvalidResponse(format!("missing u64 field: {key}")))
-}
-
-fn i64_field(object: &serde_json::Map<String, Value>, key: &str) -> Result<i64, RpcError> {
-    object
-        .get(key)
-        .and_then(Value::as_i64)
-        .ok_or_else(|| RpcError::InvalidResponse(format!("missing i64 field: {key}")))
-}
-
-fn f64_field(object: &serde_json::Map<String, Value>, key: &str) -> Result<f64, RpcError> {
-    object
-        .get(key)
-        .and_then(Value::as_f64)
-        .ok_or_else(|| RpcError::InvalidResponse(format!("missing f64 field: {key}")))
-}
-
-fn bool_field(object: &serde_json::Map<String, Value>, key: &str) -> Result<bool, RpcError> {
-    object
-        .get(key)
-        .and_then(Value::as_bool)
-        .ok_or_else(|| RpcError::InvalidResponse(format!("missing bool field: {key}")))
+fn string(obj: &serde_json::Map<String, Value>, key: &str) -> Result<String, RpcError> {
+    field(obj, key, |v| v.as_str().map(str::to_owned), "string")
 }
 
 #[cfg(test)]
