@@ -20,274 +20,275 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
             state.active_tab = tab;
         }
         Message::ConfigUrlChanged(value) => {
-            state.config_form.url = value;
+            state.config.form.url = value;
             clear_form_feedback(state);
         }
         Message::ConfigUserChanged(value) => {
-            state.config_form.user = value;
+            state.config.form.user = value;
             clear_form_feedback(state);
         }
         Message::ConfigPasswordChanged(value) => {
-            state.config_form.password = value;
+            state.config.form.password = value;
             clear_form_feedback(state);
         }
         Message::ConfigWalletChanged(value) => {
-            state.config_form.wallet = value;
+            state.config.form.wallet = value;
             clear_form_feedback(state);
         }
         Message::ConfigPollIntervalChanged(value) => {
-            state.config_form.poll_interval_secs = value;
+            state.config.form.poll_interval_secs = value;
             clear_form_feedback(state);
         }
         Message::ConfigZmqAddressChanged(value) => {
-            state.config_form.zmq_address = value;
+            state.config.form.zmq_address = value;
             clear_form_feedback(state);
         }
         Message::ConfigZmqBufferLimitChanged(value) => {
-            state.config_form.zmq_buffer_limit = value;
+            state.config.form.zmq_buffer_limit = value;
             clear_form_feedback(state);
         }
         Message::ConfigConnectPressed => {
-            if state.connect_in_flight {
+            if state.config.connect_in_flight {
                 return Task::none();
             }
 
-            let next_config = match parse_config_form(&state.config_form) {
+            let next_config = match parse_config_form(&state.config.form) {
                 Ok(config) => config,
                 Err(error) => {
-                    state.config_error = Some(error);
-                    state.config_status = None;
+                    state.config.error = Some(error);
+                    state.config.status = None;
                     return Task::none();
                 }
             };
 
             if !is_safe_rpc_host(&next_config.url) && !allow_insecure() {
-                state.config_error = Some(
+                state.config.error = Some(
                     "RPC URL must be localhost/private unless DANGER_INSECURE_RPC=1".to_string(),
                 );
-                state.config_status = None;
+                state.config.status = None;
                 return Task::none();
             }
 
-            state.connect_in_flight = true;
-            state.config_error = None;
-            state.config_status = Some("Connecting...".to_string());
+            state.config.connect_in_flight = true;
+            state.config.error = None;
+            state.config.status = Some("Connecting...".to_string());
 
             return Task::perform(test_rpc_config(next_config), Message::ConfigConnectFinished);
         }
         Message::ConfigConnectFinished(result) => {
-            state.connect_in_flight = false;
+            state.config.connect_in_flight = false;
 
             match result {
                 Ok(config) => {
                     apply_runtime_config(state, config);
-                    state.config_status = Some("Connected successfully.".to_string());
+                    state.config.status = Some("Connected successfully.".to_string());
                     return Task::perform(async {}, |_| Message::DashboardTick);
                 }
                 Err(error) => {
-                    state.config_status = None;
-                    state.config_error = Some(error);
+                    state.config.status = None;
+                    state.config.error = Some(error);
                 }
             }
         }
         Message::ConfigReloadPressed => {
-            let store = match &state.config_store {
+            let store = match &state.config.store {
                 Some(store) => store.clone(),
                 None => {
-                    state.config_error = Some("config store unavailable".to_string());
-                    state.config_status = None;
+                    state.config.error = Some("config store unavailable".to_string());
+                    state.config.status = None;
                     return Task::none();
                 }
             };
 
-            state.config_error = None;
-            state.config_status = Some("Reloading...".to_string());
+            state.config.error = None;
+            state.config.status = Some("Reloading...".to_string());
             return Task::perform(load_config(store), Message::ConfigReloadFinished);
         }
         Message::ConfigReloadFinished(result) => match result {
             Ok(config) => {
                 apply_runtime_config(state, config);
-                state.config_status = Some("Settings reloaded.".to_string());
+                state.config.status = Some("Settings reloaded.".to_string());
                 return Task::perform(async {}, |_| Message::DashboardTick);
             }
             Err(error) => {
-                state.config_status = None;
-                state.config_error = Some(error);
+                state.config.status = None;
+                state.config.error = Some(error);
             }
         },
         Message::ConfigSavePressed => {
-            if state.save_in_flight {
+            if state.config.save_in_flight {
                 return Task::none();
             }
 
-            let store = match &state.config_store {
+            let store = match &state.config.store {
                 Some(store) => store.clone(),
                 None => {
-                    state.config_error = Some("config store unavailable".to_string());
-                    state.config_status = None;
+                    state.config.error = Some("config store unavailable".to_string());
+                    state.config.status = None;
                     return Task::none();
                 }
             };
 
-            let config = match parse_config_form(&state.config_form) {
+            let config = match parse_config_form(&state.config.form) {
                 Ok(config) => config,
                 Err(error) => {
-                    state.config_error = Some(error);
-                    state.config_status = None;
+                    state.config.error = Some(error);
+                    state.config.status = None;
                     return Task::none();
                 }
             };
 
             if !is_safe_rpc_host(&config.url) && !allow_insecure() {
-                state.config_error = Some(
+                state.config.error = Some(
                     "RPC URL must be localhost/private unless DANGER_INSECURE_RPC=1".to_string(),
                 );
-                state.config_status = None;
+                state.config.status = None;
                 return Task::none();
             }
 
-            state.save_in_flight = true;
-            state.config_error = None;
-            state.config_status = Some("Saving...".to_string());
+            state.config.save_in_flight = true;
+            state.config.error = None;
+            state.config.status = Some("Saving...".to_string());
             return Task::perform(save_config(store, config), Message::ConfigSaveFinished);
         }
         Message::ConfigSaveFinished(result) => {
-            state.save_in_flight = false;
+            state.config.save_in_flight = false;
 
             match result {
                 Ok(config) => {
                     apply_runtime_config(state, config);
-                    state.config_status = Some("Settings saved.".to_string());
+                    state.config.status = Some("Settings saved.".to_string());
                     return Task::perform(async {}, |_| Message::DashboardTick);
                 }
                 Err(error) => {
-                    state.config_status = None;
-                    state.config_error = Some(error);
+                    state.config.status = None;
+                    state.config.error = Some(error);
                 }
             }
         }
         Message::RpcSearchChanged(value) => {
-            state.rpc_search = value;
+            state.rpc.search = value;
         }
         Message::RpcCategoryToggled(category) => {
-            if !state.rpc_collapsed_categories.remove(&category) {
-                state.rpc_collapsed_categories.insert(category);
+            if !state.rpc.collapsed_categories.remove(&category) {
+                state.rpc.collapsed_categories.insert(category);
             }
         }
         Message::RpcMethodSelected(method) => {
-            state.rpc_selected_method = Some(method);
-            state.rpc_error = None;
+            state.rpc.selected_method = Some(method);
+            state.rpc.error = None;
         }
         Message::RpcParamsChanged(value) => {
-            state.rpc_params_input = value;
-            state.rpc_error = None;
+            state.rpc.params_input = value;
+            state.rpc.error = None;
         }
         Message::RpcBatchModeToggled(enabled) => {
-            state.rpc_batch_mode = enabled;
-            state.rpc_error = None;
+            state.rpc.batch_mode = enabled;
+            state.rpc.error = None;
         }
         Message::RpcBatchChanged(value) => {
-            state.rpc_batch_input = value;
-            state.rpc_error = None;
+            state.rpc.batch_input = value;
+            state.rpc.error = None;
         }
         Message::RpcExecutePressed => {
-            if state.rpc_execute_in_flight {
+            if state.rpc.execute_in_flight {
                 return Task::none();
             }
 
-            state.rpc_execute_in_flight = true;
-            state.rpc_error = None;
-            state.rpc_response = None;
-            let client = state.rpc_client.clone();
+            state.rpc.execute_in_flight = true;
+            state.rpc.error = None;
+            state.rpc.response = None;
+            let client = state.rpc.client.clone();
 
-            if state.rpc_batch_mode {
-                let batch_text = state.rpc_batch_input.clone();
+            if state.rpc.batch_mode {
+                let batch_text = state.rpc.batch_input.clone();
                 return Task::perform(
                     run_batch_rpc(client, batch_text),
                     Message::RpcExecuteFinished,
                 );
             }
 
-            let method = match &state.rpc_selected_method {
+            let method = match &state.rpc.selected_method {
                 Some(method) => method.clone(),
                 None => {
-                    state.rpc_execute_in_flight = false;
-                    state.rpc_error = Some("Select an RPC method first".to_string());
+                    state.rpc.execute_in_flight = false;
+                    state.rpc.error = Some("Select an RPC method first".to_string());
                     return Task::none();
                 }
             };
-            let params_text = state.rpc_params_input.clone();
+            let params_text = state.rpc.params_input.clone();
             return Task::perform(
                 run_single_rpc(client, method, params_text),
                 Message::RpcExecuteFinished,
             );
         }
         Message::RpcExecuteFinished(result) => {
-            state.rpc_execute_in_flight = false;
+            state.rpc.execute_in_flight = false;
             match result {
                 Ok(response) => {
-                    state.rpc_response = Some(response);
-                    state.rpc_error = None;
+                    state.rpc.response = Some(response);
+                    state.rpc.error = None;
                 }
                 Err(error) => {
-                    state.rpc_response = None;
-                    state.rpc_error = Some(error);
+                    state.rpc.response = None;
+                    state.rpc.error = Some(error);
                 }
             }
         }
         Message::DashboardTick => {
-            if state.dashboard_in_flight {
+            if state.dashboard.in_flight {
                 return Task::none();
             }
             return start_dashboard_refresh(state);
         }
         Message::DashboardLoaded(result) => {
-            state.dashboard_in_flight = false;
+            state.dashboard.in_flight = false;
             match result {
                 Ok(snapshot) => {
                     let selected_is_valid = state
-                        .dashboard_selected_peer_id
+                        .dashboard
+                        .selected_peer_id
                         .is_some_and(|id| snapshot.peers.iter().any(|peer| peer.id == id));
                     if !selected_is_valid {
-                        state.dashboard_selected_peer_id = None;
+                        state.dashboard.selected_peer_id = None;
                     }
-                    state.dashboard_snapshot = Some(snapshot);
-                    state.dashboard_error = None;
+                    state.dashboard.snapshot = Some(snapshot);
+                    state.dashboard.error = None;
                 }
                 Err(error) => {
-                    state.dashboard_error = Some(error);
+                    state.dashboard.error = Some(error);
                 }
             }
             return schedule_pending_partial_if_ready(state);
         }
         Message::DashboardPeerSelected(peer_id) => {
-            state.dashboard_selected_peer_id = Some(peer_id);
+            state.dashboard.selected_peer_id = Some(peer_id);
         }
         Message::DashboardPeerDetailClosed => {
-            state.dashboard_selected_peer_id = None;
+            state.dashboard.selected_peer_id = None;
         }
         Message::DashboardPeerSortPressed(field) => {
-            if state.dashboard_peer_sort == field {
-                state.dashboard_peer_sort_desc = !state.dashboard_peer_sort_desc;
+            if state.dashboard.peer_sort == field {
+                state.dashboard.peer_sort_desc = !state.dashboard.peer_sort_desc;
             } else {
-                state.dashboard_peer_sort = field;
-                state.dashboard_peer_sort_desc = false;
+                state.dashboard.peer_sort = field;
+                state.dashboard.peer_sort_desc = false;
             }
         }
         Message::DashboardPartialRefreshRequested(partial) => {
-            if state.dashboard_in_flight {
+            if state.dashboard.in_flight {
                 return Task::none();
             }
-            if state.dashboard_snapshot.is_none() {
+            if state.dashboard.snapshot.is_none() {
                 return start_dashboard_refresh(state);
             }
             return start_partial_dashboard_refresh(state, partial);
         }
         Message::DashboardPartialLoaded(result) => {
-            state.dashboard_in_flight = false;
+            state.dashboard.in_flight = false;
             match result {
                 Ok(partial) => {
-                    if let Some(snapshot) = state.dashboard_snapshot.as_mut() {
+                    if let Some(snapshot) = state.dashboard.snapshot.as_mut() {
                         match partial {
                             DashboardPartialUpdate::Mempool(mempool) => {
                                 snapshot.mempool = mempool;
@@ -297,24 +298,24 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
                                 snapshot.mempool = mempool;
                             }
                         }
-                        state.dashboard_error = None;
+                        state.dashboard.error = None;
                     } else {
                         return start_dashboard_refresh(state);
                     }
                 }
                 Err(error) => {
-                    state.dashboard_error = Some(error);
+                    state.dashboard.error = Some(error);
                 }
             }
             return schedule_pending_partial_if_ready(state);
         }
         Message::ZmqPollTick => {
             poll_zmq_feed(state);
-            if let Some(partial) = state.dashboard_pending_partial
-                && !state.dashboard_in_flight
+            if let Some(partial) = state.dashboard.pending_partial
+                && !state.dashboard.in_flight
                 && can_run_debounced_refresh(state)
             {
-                state.dashboard_pending_partial = None;
+                state.dashboard.pending_partial = None;
                 return Task::perform(
                     async move { partial },
                     Message::DashboardPartialRefreshRequested,
@@ -362,10 +363,10 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
 }
 
 fn schedule_pending_partial_if_ready(state: &mut State) -> Task<Message> {
-    if let Some(partial) = state.dashboard_pending_partial
+    if let Some(partial) = state.dashboard.pending_partial
         && can_run_debounced_refresh(state)
     {
-        state.dashboard_pending_partial = None;
+        state.dashboard.pending_partial = None;
         return Task::perform(
             async move { partial },
             Message::DashboardPartialRefreshRequested,
@@ -375,9 +376,9 @@ fn schedule_pending_partial_if_ready(state: &mut State) -> Task<Message> {
 }
 
 fn start_dashboard_refresh(state: &mut State) -> Task<Message> {
-    state.dashboard_in_flight = true;
-    state.dashboard_last_refresh_at = Some(Instant::now());
-    let client = state.rpc_client.clone();
+    state.dashboard.in_flight = true;
+    state.dashboard.last_refresh_at = Some(Instant::now());
+    let client = state.rpc.client.clone();
     Task::perform(load_dashboard(client), Message::DashboardLoaded)
 }
 
@@ -385,9 +386,9 @@ fn start_partial_dashboard_refresh(
     state: &mut State,
     partial: DashboardPartialSet,
 ) -> Task<Message> {
-    state.dashboard_in_flight = true;
-    state.dashboard_last_refresh_at = Some(Instant::now());
-    let client = state.rpc_client.clone();
+    state.dashboard.in_flight = true;
+    state.dashboard.last_refresh_at = Some(Instant::now());
+    let client = state.rpc.client.clone();
     Task::perform(
         load_dashboard_partial(client, partial),
         Message::DashboardPartialLoaded,
@@ -396,29 +397,30 @@ fn start_partial_dashboard_refresh(
 
 fn can_run_debounced_refresh(state: &State) -> bool {
     state
-        .dashboard_last_refresh_at
+        .dashboard
+        .last_refresh_at
         .is_none_or(|t| t.elapsed() >= Duration::from_millis(ZMQ_REFRESH_DEBOUNCE_MS))
 }
 
 fn poll_zmq_feed(state: &mut State) {
     let mut saw_hashblock = false;
     let mut saw_hashtx = false;
-    let mut next_cursor = state.zmq_last_cursor;
+    let mut next_cursor = state.zmq.last_cursor;
 
     {
         let zmq_state = state.zmq_state.state.lock().expect("zmq state lock");
-        state.zmq_connected = zmq_state.connected;
-        state.zmq_connected_address = zmq_state.address.clone();
-        state.zmq_events_seen = zmq_state.next_cursor.saturating_sub(1);
+        state.zmq.connected = zmq_state.connected;
+        state.zmq.connected_address = zmq_state.address.clone();
+        state.zmq.events_seen = zmq_state.next_cursor.saturating_sub(1);
 
         for message in zmq_state.messages.iter() {
-            if message.cursor <= state.zmq_last_cursor {
+            if message.cursor <= state.zmq.last_cursor {
                 continue;
             }
 
             next_cursor = next_cursor.max(message.cursor);
-            state.zmq_last_topic = Some(message.topic.clone());
-            state.zmq_last_event_at = Some(message.timestamp);
+            state.zmq.last_topic = Some(message.topic.clone());
+            state.zmq.last_event_at = Some(message.timestamp);
 
             match message.topic.as_str() {
                 "hashblock" => saw_hashblock = true,
@@ -427,7 +429,7 @@ fn poll_zmq_feed(state: &mut State) {
             }
         }
 
-        state.zmq_recent_events = zmq_state
+        state.zmq.recent_events = zmq_state
             .messages
             .iter()
             .rev()
@@ -443,7 +445,7 @@ fn poll_zmq_feed(state: &mut State) {
             .collect();
     }
 
-    state.zmq_last_cursor = next_cursor;
+    state.zmq.last_cursor = next_cursor;
 
     if saw_hashblock {
         merge_pending_partial(state, DashboardPartialSet::ChainAndMempool);
@@ -453,7 +455,7 @@ fn poll_zmq_feed(state: &mut State) {
 }
 
 fn merge_pending_partial(state: &mut State, next: DashboardPartialSet) {
-    state.dashboard_pending_partial = Some(match (state.dashboard_pending_partial, next) {
+    state.dashboard.pending_partial = Some(match (state.dashboard.pending_partial, next) {
         (Some(DashboardPartialSet::ChainAndMempool), _) => DashboardPartialSet::ChainAndMempool,
         (_, DashboardPartialSet::ChainAndMempool) => DashboardPartialSet::ChainAndMempool,
         _ => DashboardPartialSet::MempoolOnly,
@@ -461,8 +463,8 @@ fn merge_pending_partial(state: &mut State, next: DashboardPartialSet) {
 }
 
 fn clear_form_feedback(state: &mut State) {
-    state.config_error = None;
-    state.config_status = None;
+    state.config.error = None;
+    state.config.status = None;
 }
 
 fn parse_config_form(form: &ConfigForm) -> Result<RpcConfig, String> {
@@ -556,11 +558,11 @@ async fn save_config(store: ConfigStore, config: RpcConfig) -> Result<RpcConfig,
 }
 
 fn apply_runtime_config(state: &mut State, config: RpcConfig) {
-    let previous_zmq = state.runtime_config.zmq_address.clone();
-    state.runtime_config = config.clone();
-    state.rpc_client = RpcClient::new(config.clone());
-    state.config_form = ConfigForm::from(&config);
-    state.config_error = None;
+    let previous_zmq = state.config.runtime.zmq_address.clone();
+    state.config.runtime = config.clone();
+    state.rpc.client = RpcClient::new(config.clone());
+    state.config.form = ConfigForm::from(&config);
+    state.config.error = None;
     apply_zmq_runtime(state, &previous_zmq);
 }
 
@@ -568,13 +570,14 @@ fn apply_zmq_runtime(state: &mut State, previous_address: &str) {
     {
         let mut zmq_state = state.zmq_state.state.lock().expect("zmq state lock");
         zmq_state.buffer_limit = state
-            .runtime_config
+            .config
+            .runtime
             .zmq_buffer_limit
             .clamp(MIN_ZMQ_BUFFER_LIMIT, MAX_ZMQ_BUFFER_LIMIT);
     }
     state.zmq_state.changed.notify_all();
 
-    let current = state.runtime_config.zmq_address.trim().to_string();
+    let current = state.config.runtime.zmq_address.trim().to_string();
     if current == previous_address {
         return;
     }
@@ -584,13 +587,13 @@ fn apply_zmq_runtime(state: &mut State, previous_address: &str) {
     }
 
     if current.is_empty() {
-        state.zmq_connected = false;
-        state.zmq_connected_address.clear();
-        state.zmq_last_cursor = 0;
-        state.zmq_last_topic = None;
-        state.zmq_last_event_at = None;
-        state.zmq_recent_events.clear();
-        state.dashboard_pending_partial = None;
+        state.zmq.connected = false;
+        state.zmq.connected_address.clear();
+        state.zmq.last_cursor = 0;
+        state.zmq.last_topic = None;
+        state.zmq.last_event_at = None;
+        state.zmq.recent_events.clear();
+        state.dashboard.pending_partial = None;
         return;
     }
 

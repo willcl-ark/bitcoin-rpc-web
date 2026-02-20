@@ -66,46 +66,62 @@ impl From<&RpcConfig> for ConfigForm {
     }
 }
 
-pub struct State {
-    pub active_tab: Tab,
-    pub config_store: Option<ConfigStore>,
-    pub config_store_path: Option<String>,
-    pub config_store_error: Option<String>,
-    pub config_form: ConfigForm,
-    pub runtime_config: RpcConfig,
-    pub rpc_client: RpcClient,
-    pub zmq_state: Arc<ZmqSharedState>,
-    pub zmq_handle: Option<ZmqHandle>,
+pub struct ConfigState {
+    pub store: Option<ConfigStore>,
+    pub store_path: Option<String>,
+    pub store_error: Option<String>,
+    pub form: ConfigForm,
+    pub runtime: RpcConfig,
     pub connect_in_flight: bool,
     pub save_in_flight: bool,
-    pub config_status: Option<String>,
-    pub config_error: Option<String>,
-    pub schema_index: Option<SchemaIndex>,
+    pub status: Option<String>,
+    pub error: Option<String>,
+}
+
+pub struct RpcState {
+    pub client: RpcClient,
+    pub schema: Option<SchemaIndex>,
     pub schema_error: Option<String>,
-    pub rpc_search: String,
-    pub rpc_collapsed_categories: BTreeSet<String>,
-    pub rpc_selected_method: Option<String>,
-    pub rpc_params_input: String,
-    pub rpc_batch_mode: bool,
-    pub rpc_batch_input: String,
-    pub rpc_execute_in_flight: bool,
-    pub rpc_response: Option<String>,
-    pub rpc_error: Option<String>,
-    pub dashboard_snapshot: Option<DashboardSnapshot>,
-    pub dashboard_in_flight: bool,
-    pub dashboard_error: Option<String>,
-    pub dashboard_selected_peer_id: Option<i64>,
-    pub dashboard_peer_sort: PeerSortField,
-    pub dashboard_peer_sort_desc: bool,
-    pub dashboard_pending_partial: Option<DashboardPartialSet>,
-    pub dashboard_last_refresh_at: Option<Instant>,
-    pub zmq_connected: bool,
-    pub zmq_connected_address: String,
-    pub zmq_last_cursor: u64,
-    pub zmq_events_seen: u64,
-    pub zmq_last_topic: Option<String>,
-    pub zmq_last_event_at: Option<u64>,
-    pub zmq_recent_events: Vec<ZmqUiEvent>,
+    pub search: String,
+    pub collapsed_categories: BTreeSet<String>,
+    pub selected_method: Option<String>,
+    pub params_input: String,
+    pub batch_mode: bool,
+    pub batch_input: String,
+    pub execute_in_flight: bool,
+    pub response: Option<String>,
+    pub error: Option<String>,
+}
+
+pub struct DashboardState {
+    pub snapshot: Option<DashboardSnapshot>,
+    pub in_flight: bool,
+    pub error: Option<String>,
+    pub selected_peer_id: Option<i64>,
+    pub peer_sort: PeerSortField,
+    pub peer_sort_desc: bool,
+    pub pending_partial: Option<DashboardPartialSet>,
+    pub last_refresh_at: Option<Instant>,
+}
+
+pub struct ZmqViewState {
+    pub connected: bool,
+    pub connected_address: String,
+    pub last_cursor: u64,
+    pub events_seen: u64,
+    pub last_topic: Option<String>,
+    pub last_event_at: Option<u64>,
+    pub recent_events: Vec<ZmqUiEvent>,
+}
+
+pub struct State {
+    pub active_tab: Tab,
+    pub config: ConfigState,
+    pub rpc: RpcState,
+    pub dashboard: DashboardState,
+    pub zmq: ZmqViewState,
+    pub zmq_state: Arc<ZmqSharedState>,
+    pub zmq_handle: Option<ZmqHandle>,
     pub music: Option<MusicRuntime>,
     pub music_snapshot: MusicSnapshot,
 }
@@ -135,8 +151,12 @@ impl State {
             }
         };
 
-        let zmq = ZmqSharedState::default();
-        zmq.state.lock().expect("zmq state lock").buffer_limit = runtime_config
+        let zmq_shared = ZmqSharedState::default();
+        zmq_shared
+            .state
+            .lock()
+            .expect("zmq state lock")
+            .buffer_limit = runtime_config
             .zmq_buffer_limit
             .clamp(MIN_ZMQ_BUFFER_LIMIT, MAX_ZMQ_BUFFER_LIMIT);
 
@@ -144,7 +164,7 @@ impl State {
             Ok(index) => (Some(index), None),
             Err(error) => (None, Some(error)),
         };
-        let rpc_collapsed_categories = schema_index
+        let collapsed_categories = schema_index
             .as_ref()
             .map(|schema| {
                 schema
@@ -157,44 +177,52 @@ impl State {
 
         let mut state = Self {
             active_tab: Tab::default(),
-            config_store,
-            config_store_path,
-            config_store_error,
-            config_form: ConfigForm::from(&runtime_config),
-            rpc_client: RpcClient::new(runtime_config.clone()),
-            runtime_config,
-            zmq_state: Arc::new(zmq),
+            config: ConfigState {
+                store: config_store,
+                store_path: config_store_path,
+                store_error: config_store_error,
+                form: ConfigForm::from(&runtime_config),
+                runtime: runtime_config.clone(),
+                connect_in_flight: false,
+                save_in_flight: false,
+                status: None,
+                error: None,
+            },
+            rpc: RpcState {
+                client: RpcClient::new(runtime_config),
+                schema: schema_index,
+                schema_error,
+                search: String::new(),
+                collapsed_categories,
+                selected_method: Some("getblockchaininfo".to_string()),
+                params_input: "[]".to_string(),
+                batch_mode: false,
+                batch_input: "[]".to_string(),
+                execute_in_flight: false,
+                response: None,
+                error: None,
+            },
+            dashboard: DashboardState {
+                snapshot: None,
+                in_flight: false,
+                error: None,
+                selected_peer_id: None,
+                peer_sort: PeerSortField::default(),
+                peer_sort_desc: false,
+                pending_partial: None,
+                last_refresh_at: None,
+            },
+            zmq: ZmqViewState {
+                connected: false,
+                connected_address: String::new(),
+                last_cursor: 0,
+                events_seen: 0,
+                last_topic: None,
+                last_event_at: None,
+                recent_events: Vec::new(),
+            },
+            zmq_state: Arc::new(zmq_shared),
             zmq_handle: None,
-            connect_in_flight: false,
-            save_in_flight: false,
-            config_status: None,
-            config_error: None,
-            schema_index,
-            schema_error,
-            rpc_search: String::new(),
-            rpc_collapsed_categories,
-            rpc_selected_method: Some("getblockchaininfo".to_string()),
-            rpc_params_input: "[]".to_string(),
-            rpc_batch_mode: false,
-            rpc_batch_input: "[]".to_string(),
-            rpc_execute_in_flight: false,
-            rpc_response: None,
-            rpc_error: None,
-            dashboard_snapshot: None,
-            dashboard_in_flight: false,
-            dashboard_error: None,
-            dashboard_selected_peer_id: None,
-            dashboard_peer_sort: PeerSortField::Id,
-            dashboard_peer_sort_desc: false,
-            dashboard_pending_partial: None,
-            dashboard_last_refresh_at: None,
-            zmq_connected: false,
-            zmq_connected_address: String::new(),
-            zmq_last_cursor: 0,
-            zmq_events_seen: 0,
-            zmq_last_topic: None,
-            zmq_last_event_at: None,
-            zmq_recent_events: Vec::new(),
             music: None,
             music_snapshot: MusicSnapshot::default(),
         };
@@ -205,7 +233,7 @@ impl State {
             state.music = Some(rt);
         }
 
-        let startup_zmq = state.runtime_config.zmq_address.trim().to_string();
+        let startup_zmq = state.config.runtime.zmq_address.trim().to_string();
         if !startup_zmq.is_empty() {
             state.zmq_handle = Some(start_zmq_subscriber(&startup_zmq, state.zmq_state.clone()));
         }

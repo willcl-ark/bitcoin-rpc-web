@@ -10,15 +10,15 @@ use crate::core::dashboard_service::PeerSummary;
 use crate::ui::components;
 
 pub fn view(state: &State) -> Element<'_, Message> {
-    let zmq_status = if state.zmq_connected {
-        format!("connected ({})", state.zmq_connected_address)
-    } else if state.zmq_connected_address.is_empty() {
+    let zmq_status = if state.zmq.connected {
+        format!("connected ({})", state.zmq.connected_address)
+    } else if state.zmq.connected_address.is_empty() {
         "disabled".to_string()
     } else {
-        format!("disconnected ({})", state.zmq_connected_address)
+        format!("disconnected ({})", state.zmq.connected_address)
     };
 
-    let top_strip: Element<'_, Message> = if let Some(snapshot) = &state.dashboard_snapshot {
+    let top_strip: Element<'_, Message> = if let Some(snapshot) = &state.dashboard.snapshot {
         row![
             summary_card(
                 "Chain",
@@ -90,21 +90,22 @@ pub fn view(state: &State) -> Element<'_, Message> {
             ("status", zmq_status),
             (
                 "refresh",
-                if state.dashboard_in_flight {
+                if state.dashboard.in_flight {
                     "syncing".to_string()
                 } else {
                     "idle".to_string()
                 },
             ),
-            ("events seen", state.zmq_events_seen.to_string()),
+            ("events seen", state.zmq.events_seen.to_string()),
             (
                 "last topic",
-                state.zmq_last_topic.as_deref().unwrap_or("-").to_string(),
+                state.zmq.last_topic.as_deref().unwrap_or("-").to_string(),
             ),
             (
                 "last event unix",
                 state
-                    .zmq_last_event_at
+                    .zmq
+                    .last_event_at
                     .map(|v| v.to_string())
                     .unwrap_or_else(|| "-".to_string()),
             ),
@@ -130,10 +131,10 @@ pub fn view(state: &State) -> Element<'_, Message> {
     ]
     .spacing(2);
 
-    if state.zmq_recent_events.is_empty() {
+    if state.zmq.recent_events.is_empty() {
         live_rows = live_rows.push(text("No ZMQ events yet.").color(components::MUTED));
     } else {
-        for evt in state.zmq_recent_events.iter().rev() {
+        for evt in state.zmq.recent_events.iter().rev() {
             live_rows = live_rows.push(
                 row![
                     text(&evt.topic)
@@ -197,7 +198,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
     .height(Fill)
     .width(Fill);
 
-    if let Some(error) = &state.dashboard_error {
+    if let Some(error) = &state.dashboard.error {
         root = root.push(text(format!("ERR: {error}")).color(components::ERROR_RED));
     }
 
@@ -218,10 +219,10 @@ fn peer_table(state: &State) -> Element<'_, Message> {
 
     let mut rows = column![text("PEERS").size(15).color(components::ACCENT), header].spacing(2);
 
-    if let Some(snapshot) = &state.dashboard_snapshot {
+    if let Some(snapshot) = &state.dashboard.snapshot {
         let subver_scale = subversion_major_scale(&snapshot.peers);
         for peer in sorted_peers(state, &snapshot.peers) {
-            let selected = state.dashboard_selected_peer_id == Some(peer.id);
+            let selected = state.dashboard.selected_peer_id == Some(peer.id);
             let ping = peer
                 .ping_time
                 .map(|v| format!("{v:.3}s"))
@@ -264,8 +265,8 @@ fn peer_table(state: &State) -> Element<'_, Message> {
         rows = rows.push(text("No peer data").color(components::MUTED));
     }
 
-    let detail_panel = if let Some(snapshot) = &state.dashboard_snapshot
-        && let Some(selected_id) = state.dashboard_selected_peer_id
+    let detail_panel = if let Some(snapshot) = &state.dashboard.snapshot
+        && let Some(selected_id) = state.dashboard.selected_peer_id
         && let Some(raw) = snapshot.peer_details.get(&selected_id)
     {
         Some(
@@ -330,9 +331,9 @@ fn sort_header<'a>(
     label: &'a str,
     field: PeerSortField,
 ) -> iced::widget::Button<'a, Message> {
-    let active = state.dashboard_peer_sort == field;
+    let active = state.dashboard.peer_sort == field;
     let marker = if active {
-        if state.dashboard_peer_sort_desc {
+        if state.dashboard.peer_sort_desc {
             " \u{25BC}"
         } else {
             " \u{25B2}"
@@ -352,7 +353,7 @@ fn sort_header<'a>(
 
 fn sorted_peers<'a>(state: &State, peers: &'a [PeerSummary]) -> Vec<&'a PeerSummary> {
     let mut sorted: Vec<&PeerSummary> = peers.iter().collect();
-    sorted.sort_by(|a, b| match state.dashboard_peer_sort {
+    sorted.sort_by(|a, b| match state.dashboard.peer_sort {
         PeerSortField::Id => a.id.cmp(&b.id),
         PeerSortField::Address => a.addr.cmp(&b.addr),
         PeerSortField::Subversion => a.subver.cmp(&b.subver),
@@ -364,7 +365,7 @@ fn sorted_peers<'a>(state: &State, peers: &'a [PeerSummary]) -> Vec<&'a PeerSumm
             ap.partial_cmp(&bp).unwrap_or(std::cmp::Ordering::Equal)
         }
     });
-    if state.dashboard_peer_sort_desc {
+    if state.dashboard.peer_sort_desc {
         sorted.reverse();
     }
     sorted

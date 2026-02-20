@@ -8,9 +8,9 @@ use crate::app::state::State;
 use crate::ui::components;
 
 pub fn view(state: &State) -> Element<'_, Message> {
-    let method_list = if let Some(schema) = &state.schema_index {
+    let method_list = if let Some(schema) = &state.rpc.schema {
         let mut grouped: BTreeMap<String, Vec<_>> = BTreeMap::new();
-        for method in schema.search(&state.rpc_search).into_iter().take(400) {
+        for method in schema.search(&state.rpc.search).into_iter().take(400) {
             grouped
                 .entry(method.category.clone())
                 .or_default()
@@ -25,7 +25,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
 
         for (category, mut methods) in grouped {
             methods.sort_by(|a, b| a.name.cmp(&b.name));
-            let collapsed = state.rpc_collapsed_categories.contains(&category);
+            let collapsed = state.rpc.collapsed_categories.contains(&category);
             let marker = if collapsed { "[+]" } else { "[-]" };
             let category_label =
                 format!("{marker} {} ({})", category.to_uppercase(), methods.len());
@@ -42,7 +42,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
             }
 
             for method in methods {
-                let selected = state.rpc_selected_method.as_deref() == Some(method.name.as_str());
+                let selected = state.rpc.selected_method.as_deref() == Some(method.name.as_str());
                 let label = if selected {
                     format!("> {}", method.name)
                 } else {
@@ -63,10 +63,11 @@ pub fn view(state: &State) -> Element<'_, Message> {
     };
 
     let selected_summary = state
-        .rpc_selected_method
+        .rpc
+        .selected_method
         .as_ref()
         .and_then(|name| {
-            state.schema_index.as_ref().and_then(|schema| {
+            state.rpc.schema.as_ref().and_then(|schema| {
                 schema
                     .methods()
                     .iter()
@@ -77,7 +78,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
         .cloned()
         .unwrap_or_else(|| "Select a method from the list.".to_string());
 
-    let execute_button = if state.rpc_execute_in_flight {
+    let execute_button = if state.rpc.execute_in_flight {
         button("Running...").style(components::action_button_style())
     } else {
         button("Execute")
@@ -92,26 +93,26 @@ pub fn view(state: &State) -> Element<'_, Message> {
         text("SEARCH, INSPECT, EXECUTE")
             .size(12)
             .color(components::MUTED),
-        text_input("Search methods", &state.rpc_search)
+        text_input("Search methods", &state.rpc.search)
             .on_input(Message::RpcSearchChanged)
             .padding(8)
             .style(components::input_style()),
         text(format!(
             "Selected method: {}",
-            state.rpc_selected_method.as_deref().unwrap_or("(none)")
+            state.rpc.selected_method.as_deref().unwrap_or("(none)")
         )),
         text(selected_summary).color(components::MUTED),
-        checkbox("Batch mode", state.rpc_batch_mode)
+        checkbox("Batch mode", state.rpc.batch_mode)
             .on_toggle(Message::RpcBatchModeToggled)
             .style(components::checkbox_style()),
     ]
     .spacing(10);
 
-    if state.rpc_batch_mode {
+    if state.rpc.batch_mode {
         right = right.push(text("Batch request JSON array")).push(
             text_input(
                 r#"[{"method":"getblockchaininfo","params":[]}]"#,
-                &state.rpc_batch_input,
+                &state.rpc.batch_input,
             )
             .on_input(Message::RpcBatchChanged)
             .padding(8)
@@ -119,7 +120,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
         );
     } else {
         right = right.push(text("Params JSON")).push(
-            text_input("[]", &state.rpc_params_input)
+            text_input("[]", &state.rpc.params_input)
                 .on_input(Message::RpcParamsChanged)
                 .padding(8)
                 .style(components::input_style()),
@@ -128,13 +129,13 @@ pub fn view(state: &State) -> Element<'_, Message> {
 
     right = right.push(execute_button);
 
-    if let Some(error) = &state.schema_error {
+    if let Some(error) = &state.rpc.schema_error {
         right = right.push(text(format!("Schema error: {error}")).color(components::ERROR_RED));
     }
-    if let Some(error) = &state.rpc_error {
+    if let Some(error) = &state.rpc.error {
         right = right.push(text(format!("ERR: {error}")).color(components::ERROR_RED));
     }
-    if let Some(response) = &state.rpc_response {
+    if let Some(response) = &state.rpc.response {
         right = right
             .push(text("RESPONSE").size(14).color(components::ACCENT))
             .push(

@@ -6,9 +6,9 @@ use crate::app::state::State;
 use crate::ui::components;
 
 pub fn view(state: &State) -> Element<'_, Message> {
-    let form = &state.config_form;
+    let form = &state.config.form;
 
-    let connect_button = if state.connect_in_flight {
+    let connect_button = if state.config.connect_in_flight {
         button("Connecting...").style(components::action_button_style())
     } else {
         button("Connect")
@@ -16,14 +16,14 @@ pub fn view(state: &State) -> Element<'_, Message> {
             .on_press(Message::ConfigConnectPressed)
     };
 
-    let save_button = if state.save_in_flight {
+    let save_button = if state.config.save_in_flight {
         button("Saving...").style(components::action_button_style())
     } else {
         button("Save")
             .style(components::action_button_style())
             .on_press(Message::ConfigSavePressed)
     };
-    let reload_button = if state.save_in_flight || state.connect_in_flight {
+    let reload_button = if state.config.save_in_flight || state.config.connect_in_flight {
         button("Reload").style(components::action_button_style())
     } else {
         button("Reload")
@@ -77,16 +77,16 @@ pub fn view(state: &State) -> Element<'_, Message> {
     .spacing(8)
     .width(Fill);
 
-    if let Some(path) = &state.config_store_path {
+    if let Some(path) = &state.config.store_path {
         content = content.push(text(format!("Config file: {path}")).color(components::MUTED));
     }
-    if let Some(error) = &state.config_store_error {
+    if let Some(error) = &state.config.store_error {
         content = content.push(text(format!("Config error: {error}")).color(components::ERROR_RED));
     }
-    if let Some(status) = &state.config_status {
+    if let Some(status) = &state.config.status {
         content = content.push(text(status).color(components::MUTED));
     }
-    if let Some(error) = &state.config_error {
+    if let Some(error) = &state.config.error {
         content = content.push(text(format!("ERR: {error}")).color(components::ERROR_RED));
     }
 
