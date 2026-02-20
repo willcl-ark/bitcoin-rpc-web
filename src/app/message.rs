@@ -29,6 +29,7 @@ pub enum Message {
     ConfigZmqAddressChanged(String),
     ConfigZmqBufferLimitChanged(String),
     ConfigFontSizeChanged(String),
+    ConfigStartAudioPlayingChanged(bool),
     ConfigConnectPressed,
     ConfigConnectFinished(Result<RpcConfig, String>),
     ConfigReloadPressed,

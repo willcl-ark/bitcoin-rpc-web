@@ -1,4 +1,4 @@
-use iced::widget::{button, column, container, row, text, text_input};
+use iced::widget::{button, checkbox, column, container, row, text, text_input};
 use iced::{Element, Fill};
 
 use crate::app::message::Message;
@@ -87,6 +87,9 @@ pub fn view(state: &State) -> Element<'_, Message> {
             .on_input(Message::ConfigFontSizeChanged)
             .padding(8)
             .style(components::input_style(colors)),
+        checkbox("Start audio playing on launch", form.start_audio_playing)
+            .on_toggle(Message::ConfigStartAudioPlayingChanged)
+            .style(components::checkbox_style(colors)),
         row![connect_button, save_button, reload_button].spacing(12),
     ]
     .spacing(8)

@@ -138,6 +138,7 @@ mod tests {
             zmq_address: "tcp://127.0.0.1:29000".to_string(),
             zmq_buffer_limit: 2048,
             font_size: 14,
+            start_audio_playing: false,
         };
 
         store.save(&config).expect("config should save");

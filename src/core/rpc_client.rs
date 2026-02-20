@@ -16,6 +16,10 @@ fn default_font_size() -> u16 {
     DEFAULT_FONT_SIZE
 }
 
+fn default_start_audio_playing() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RpcConfig {
     pub url: String,
@@ -27,6 +31,8 @@ pub struct RpcConfig {
     pub zmq_buffer_limit: usize,
     #[serde(default = "default_font_size")]
     pub font_size: u16,
+    #[serde(default = "default_start_audio_playing")]
+    pub start_audio_playing: bool,
 }
 
 impl Default for RpcConfig {
@@ -40,6 +46,7 @@ impl Default for RpcConfig {
             zmq_address: String::new(),
             zmq_buffer_limit: DEFAULT_ZMQ_BUFFER_LIMIT,
             font_size: DEFAULT_FONT_SIZE,
+            start_audio_playing: true,
         }
     }
 }

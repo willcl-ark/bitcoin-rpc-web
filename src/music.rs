@@ -50,9 +50,9 @@ pub fn is_enabled() -> bool {
     imp::is_enabled()
 }
 
-pub fn start_music() -> MusicRuntime {
+pub fn start_music(start_playing: bool) -> MusicRuntime {
     MusicRuntime {
-        inner: imp::start_music(),
+        inner: imp::start_music(start_playing),
     }
 }
 
@@ -194,7 +194,7 @@ mod imp {
         true
     }
 
-    pub(super) fn start_music() -> InnerRuntime {
+    pub(super) fn start_music(start_playing: bool) -> InnerRuntime {
         let mut tunes = load_tunes();
         shuffle(&mut tunes);
         debug!(tracks = tunes.len(), "initialized music runtime");
@@ -203,7 +203,7 @@ mod imp {
         let state = Arc::new(Mutex::new(MusicState {
             current_track: 0,
             track_name: tunes.first().map_or("", |t| t.name).to_string(),
-            playing: !tunes.is_empty(),
+            playing: !tunes.is_empty() && start_playing,
             volume: 1.0,
             muted: false,
         }));
@@ -223,6 +223,9 @@ mod imp {
             };
 
             let mut sink = make_sink(&handle, tunes[0].module, 1.0);
+            if !start_playing {
+                sink.pause();
+            }
 
             loop {
                 match rx.recv_timeout(Duration::from_millis(500)) {
@@ -364,7 +367,7 @@ mod imp {
         false
     }
 
-    pub(super) fn start_music() -> InnerRuntime {
+    pub(super) fn start_music(_start_playing: bool) -> InnerRuntime {
         InnerRuntime
     }
 }

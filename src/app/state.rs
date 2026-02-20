@@ -141,6 +141,7 @@ pub struct ConfigForm {
     pub zmq_address: String,
     pub zmq_buffer_limit: String,
     pub font_size: String,
+    pub start_audio_playing: bool,
 }
 
 impl From<&RpcConfig> for ConfigForm {
@@ -154,6 +155,7 @@ impl From<&RpcConfig> for ConfigForm {
             zmq_address: config.zmq_address.clone(),
             zmq_buffer_limit: config.zmq_buffer_limit.to_string(),
             font_size: config.font_size.to_string(),
+            start_audio_playing: config.start_audio_playing,
         }
     }
 }
@@ -347,7 +349,7 @@ impl State {
         };
 
         if crate::music::is_enabled() {
-            let rt = crate::music::start_music();
+            let rt = crate::music::start_music(state.config.runtime.start_audio_playing);
             state.music_snapshot = rt.snapshot();
             state.music = Some(rt);
         }

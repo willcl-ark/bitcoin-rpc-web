@@ -52,6 +52,7 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
         | Message::ConfigZmqAddressChanged(..)
         | Message::ConfigZmqBufferLimitChanged(..)
         | Message::ConfigFontSizeChanged(..)
+        | Message::ConfigStartAudioPlayingChanged(..)
         | Message::ConfigConnectPressed
         | Message::ConfigConnectFinished(..)
         | Message::ConfigReloadPressed
@@ -129,6 +130,10 @@ fn handle_config(state: &mut State, message: Message) -> Task<Message> {
         Message::ConfigFontSizeChanged(value) => {
             state.config.form.font_size = value;
             state.focused_input = Some(FocusField::ConfigFontSize);
+            clear_form_feedback(state);
+        }
+        Message::ConfigStartAudioPlayingChanged(value) => {
+            state.config.form.start_audio_playing = value;
             clear_form_feedback(state);
         }
         Message::ConfigConnectPressed => {
@@ -703,6 +708,7 @@ fn parse_config_form(form: &ConfigForm) -> Result<RpcConfig, String> {
         zmq_address: form.zmq_address.trim().to_string(),
         zmq_buffer_limit,
         font_size,
+        start_audio_playing: form.start_audio_playing,
     })
 }
 
