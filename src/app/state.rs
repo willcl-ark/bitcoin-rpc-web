@@ -2,6 +2,8 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::Instant;
 
+use iced::widget::pane_grid;
+
 use crate::core::config_store::ConfigStore;
 use crate::ui::components::ColorTheme;
 use crate::core::dashboard_service::DashboardSnapshot;
@@ -82,6 +84,12 @@ pub enum PeerSortField {
     Version,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DashboardPane {
+    Main,
+    Zmq,
+}
+
 #[derive(Debug, Clone)]
 pub struct ZmqUiEvent {
     pub topic: String,
@@ -153,6 +161,7 @@ pub struct DashboardState {
     pub pending_partial: Option<DashboardPartialSet>,
     pub last_refresh_at: Option<Instant>,
     pub netinfo_level: u8,
+    pub panes: pane_grid::State<DashboardPane>,
 }
 
 pub struct ZmqViewState {
@@ -267,6 +276,14 @@ impl State {
                 pending_partial: None,
                 last_refresh_at: None,
                 netinfo_level: 3,
+                panes: pane_grid::State::with_configuration(
+                    pane_grid::Configuration::Split {
+                        axis: pane_grid::Axis::Horizontal,
+                        ratio: 0.76,
+                        a: Box::new(pane_grid::Configuration::Pane(DashboardPane::Main)),
+                        b: Box::new(pane_grid::Configuration::Pane(DashboardPane::Zmq)),
+                    },
+                ),
             },
             zmq: ZmqViewState {
                 connected: false,

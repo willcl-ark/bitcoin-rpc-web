@@ -1,27 +1,19 @@
 use std::time::SystemTime;
 
 use chrono::{DateTime, Utc};
-use iced::widget::{button, column, container, horizontal_space, row, scrollable, text};
+use iced::widget::{button, column, container, horizontal_space, pane_grid, row, scrollable, text};
 use iced::{Color, Element, Fill};
 use iced::{alignment, widget::text::Wrapping};
 use serde_json::Value;
 
 use crate::app::message::Message;
-use crate::app::state::{PeerSortField, State};
+use crate::app::state::{DashboardPane, PeerSortField, State};
 use crate::core::dashboard_service::PeerSummary;
 use crate::ui::components::{self, ColorTheme};
 
 pub fn view(state: &State) -> Element<'_, Message> {
     let fs = state.config.runtime.font_size;
     let colors = &state.colors;
-
-    let zmq_status = if state.zmq.connected {
-        format!("connected ({})", state.zmq.connected_address)
-    } else if state.zmq.connected_address.is_empty() {
-        "disabled".to_string()
-    } else {
-        format!("disconnected ({})", state.zmq.connected_address)
-    };
 
     let top_strip: Element<'_, Message> = if let Some(snapshot) = &state.dashboard.snapshot {
         let chain_fields = vec![
@@ -101,11 +93,68 @@ pub fn view(state: &State) -> Element<'_, Message> {
         .into()
     };
 
-    let main_body = container(peer_table(state))
-        .style(components::panel_style(colors))
-        .padding(8)
-        .width(Fill)
-        .height(Fill);
+    let mut root = column![
+        row![
+            text("DASHBOARD")
+                .size(fs + 10)
+                .color(colors.accent),
+            text("TELEMETRY + PEERING")
+                .size(fs.saturating_sub(2))
+                .color(colors.orange)
+        ]
+        .spacing(12),
+        top_strip,
+        dashboard_panes(state)
+    ]
+    .spacing(8)
+    .height(Fill)
+    .width(Fill);
+
+    if let Some(error) = &state.dashboard.error {
+        root = root.push(
+            text(format!("ERR: {error}"))
+                .size(fs)
+                .color(colors.red),
+        );
+    }
+
+    container(root).padding(12).width(Fill).height(Fill).into()
+}
+
+fn dashboard_panes(state: &State) -> Element<'_, Message> {
+    let colors = &state.colors;
+
+    pane_grid::PaneGrid::new(&state.dashboard.panes, |_, pane, _| {
+        let content = match pane {
+            DashboardPane::Main => container(peer_table(state))
+                .style(components::panel_style(colors))
+                .padding(8)
+                .width(Fill)
+                .height(Fill)
+                .into(),
+            DashboardPane::Zmq => zmq_panel(state),
+        };
+
+        pane_grid::Content::new(content)
+    })
+    .spacing(8)
+    .on_resize(12, Message::DashboardPaneResized)
+    .width(Fill)
+    .height(Fill)
+    .into()
+}
+
+fn zmq_panel(state: &State) -> Element<'_, Message> {
+    let fs = state.config.runtime.font_size;
+    let colors = &state.colors;
+
+    let zmq_status = if state.zmq.connected {
+        format!("connected ({})", state.zmq.connected_address)
+    } else if state.zmq.connected_address.is_empty() {
+        "disabled".to_string()
+    } else {
+        format!("disconnected ({})", state.zmq.connected_address)
+    };
 
     let zmq_summary = summary_card(
         colors,
@@ -190,14 +239,12 @@ pub fn view(state: &State) -> Element<'_, Message> {
         }
     }
 
-    let zmq_height = 200;
-
-    let zmq_panel = container(
+    container(
         row![
             container(zmq_summary)
                 .style(components::card_style(colors))
                 .padding(8)
-                .height(zmq_height)
+                .height(Fill)
                 .width(iced::Length::FillPortion(2)),
             container(
                 column![
@@ -215,42 +262,16 @@ pub fn view(state: &State) -> Element<'_, Message> {
             )
             .style(components::card_style(colors))
             .padding(8)
-            .height(zmq_height)
+            .height(Fill)
             .width(iced::Length::FillPortion(5)),
         ]
         .spacing(8),
     )
     .style(components::panel_style(colors))
     .padding(8)
-    .width(Fill);
-
-    let mut root = column![
-        row![
-            text("DASHBOARD")
-                .size(fs + 10)
-                .color(colors.accent),
-            text("TELEMETRY + PEERING")
-                .size(fs.saturating_sub(2))
-                .color(colors.orange)
-        ]
-        .spacing(12),
-        top_strip,
-        main_body,
-        zmq_panel
-    ]
-    .spacing(8)
+    .width(Fill)
     .height(Fill)
-    .width(Fill);
-
-    if let Some(error) = &state.dashboard.error {
-        root = root.push(
-            text(format!("ERR: {error}"))
-                .size(fs)
-                .color(colors.red),
-        );
-    }
-
-    container(root).padding(12).width(Fill).height(Fill).into()
+    .into()
 }
 
 fn peer_table(state: &State) -> Element<'_, Message> {

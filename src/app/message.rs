@@ -1,6 +1,7 @@
 use crate::app::state::{DashboardPartialSet, PeerSortField, Tab, ThemeName};
 use crate::core::dashboard_service::{DashboardPartialUpdate, DashboardSnapshot};
 use crate::core::rpc_client::RpcConfig;
+use iced::widget::pane_grid;
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -36,6 +37,7 @@ pub enum Message {
     NetinfoLevelChanged(u8),
     DashboardPartialRefreshRequested(DashboardPartialSet),
     DashboardPartialLoaded(Result<DashboardPartialUpdate, String>),
+    DashboardPaneResized(pane_grid::ResizeEvent),
     ZmqPollTick,
     MusicPlayPause,
     MusicNext,

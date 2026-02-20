@@ -58,7 +58,8 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
         | Message::DashboardPeerSortPressed(..)
         | Message::NetinfoLevelChanged(..)
         | Message::DashboardPartialRefreshRequested(..)
-        | Message::DashboardPartialLoaded(..) => handle_dashboard(state, message),
+        | Message::DashboardPartialLoaded(..)
+        | Message::DashboardPaneResized(..) => handle_dashboard(state, message),
 
         Message::ZmqPollTick => handle_zmq(state),
 
@@ -385,6 +386,9 @@ fn handle_dashboard(state: &mut State, message: Message) -> Task<Message> {
                 }
             }
             return schedule_pending_partial_if_ready(state);
+        }
+        Message::DashboardPaneResized(event) => {
+            state.dashboard.panes.resize(event.split, event.ratio);
         }
         _ => {}
     }
