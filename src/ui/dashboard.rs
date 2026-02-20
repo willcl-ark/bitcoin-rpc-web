@@ -3,6 +3,7 @@ use iced::{Element, Fill};
 
 use crate::app::message::Message;
 use crate::app::state::State;
+use crate::ui::components;
 
 pub fn view(state: &State) -> Element<'_, Message> {
     let zmq_status = if state.zmq_connected {
@@ -14,11 +15,19 @@ pub fn view(state: &State) -> Element<'_, Message> {
     };
 
     let mut left = column![
-        text("Dashboard").size(26),
+        text("Dashboard").size(32).color(components::TEXT),
         card(
             "ZMQ Feed",
             vec![
                 format!("status: {zmq_status}"),
+                format!(
+                    "refresh state: {}",
+                    if state.dashboard_in_flight {
+                        "syncing"
+                    } else {
+                        "idle"
+                    }
+                ),
                 format!("events seen: {}", state.zmq_events_seen),
                 format!(
                     "last topic: {}",
@@ -36,11 +45,14 @@ pub fn view(state: &State) -> Element<'_, Message> {
     ]
     .spacing(10);
 
-    if state.dashboard_in_flight {
-        left = left.push(text("Refreshing..."));
-    }
     if let Some(error) = &state.dashboard_error {
-        left = left.push(text(format!("Error: {error}")));
+        left = left.push(card(
+            "Refresh Error",
+            vec![
+                error.clone(),
+                "Periodic refresh continues in background.".to_string(),
+            ],
+        ));
     }
 
     if let Some(snapshot) = &state.dashboard_snapshot {
@@ -88,13 +100,19 @@ pub fn view(state: &State) -> Element<'_, Message> {
     let detail = peer_detail(state);
 
     let content = row![
-        scrollable(left)
+        container(scrollable(left).height(Fill))
+            .style(components::panel_style())
+            .padding(14)
             .width(iced::Length::FillPortion(2))
             .height(Fill),
         container(peers)
+            .style(components::panel_style())
+            .padding(12)
             .width(iced::Length::FillPortion(2))
             .height(Fill),
         container(detail)
+            .style(components::panel_style())
+            .padding(12)
             .width(iced::Length::FillPortion(2))
             .height(Fill),
     ]
@@ -102,17 +120,17 @@ pub fn view(state: &State) -> Element<'_, Message> {
     .height(Fill);
 
     container(content)
-        .padding(24)
+        .padding(12)
         .width(Fill)
         .height(Fill)
         .into()
 }
 
 fn peer_list(state: &State) -> Element<'_, Message> {
-    let mut list = column![text("Peers").size(22)].spacing(8);
+    let mut list = column![text("Peers").size(24).color(components::TEXT)].spacing(8);
     if let Some(snapshot) = &state.dashboard_snapshot {
         if snapshot.peers.is_empty() {
-            list = list.push(text("No peers"));
+            list = list.push(text("No peers").color(components::MUTED));
         } else {
             for peer in &snapshot.peers {
                 let selected = state.dashboard_selected_peer_id == Some(peer.id);
@@ -121,8 +139,8 @@ fn peer_list(state: &State) -> Element<'_, Message> {
                     .map(|v| format!("{v:.3}s"))
                     .unwrap_or_else(|| "-".to_string());
                 let label = format!(
-                    "{} {} ({}) ping {}",
-                    if selected { ">" } else { "-" },
+                    "{} {} ({})  ping {}",
+                    if selected { "selected" } else { "peer" },
                     peer.id,
                     peer.addr,
                     ping
@@ -130,50 +148,58 @@ fn peer_list(state: &State) -> Element<'_, Message> {
                 list = list.push(
                     button(text(label))
                         .width(Fill)
+                        .style(components::nav_button_style(selected))
                         .on_press(Message::DashboardPeerSelected(peer.id)),
                 );
             }
         }
     } else {
-        list = list.push(text("No peer data"));
+        list = list.push(text("No peer data").color(components::MUTED));
     }
 
     scrollable(list).into()
 }
 
 fn peer_detail(state: &State) -> Element<'_, Message> {
-    let mut detail = column![text("Peer Detail").size(22)].spacing(8);
+    let mut detail = column![text("Peer Detail").size(24).color(components::TEXT)].spacing(8);
     if let Some(snapshot) = &state.dashboard_snapshot {
         let selected = state
             .dashboard_selected_peer_id
             .and_then(|id| snapshot.peers.iter().find(|peer| peer.id == id));
 
         if let Some(peer) = selected {
-            detail = detail
-                .push(text(format!("id: {}", peer.id)))
-                .push(text(format!("addr: {}", peer.addr)))
-                .push(text(format!("inbound: {}", peer.inbound)))
-                .push(text(format!("type: {}", peer.connection_type)))
-                .push(text(format!(
-                    "ping: {}",
-                    peer.ping_time
-                        .map(|v| format!("{v:.6}"))
-                        .unwrap_or_else(|| "-".to_string())
-                )));
+            detail = detail.push(card(
+                "Selected Peer",
+                vec![
+                    format!("id: {}", peer.id),
+                    format!("addr: {}", peer.addr),
+                    format!("inbound: {}", peer.inbound),
+                    format!("type: {}", peer.connection_type),
+                    format!(
+                        "ping: {}",
+                        peer.ping_time
+                            .map(|v| format!("{v:.6}"))
+                            .unwrap_or_else(|| "-".to_string())
+                    ),
+                ],
+            ));
         } else {
-            detail = detail.push(text("Select a peer from the list."));
+            detail = detail.push(text("Select a peer from the list.").color(components::MUTED));
         }
     } else {
-        detail = detail.push(text("No peer data"));
+        detail = detail.push(text("No peer data").color(components::MUTED));
     }
 
     scrollable(detail).into()
 }
 
 fn card<'a>(title: &'a str, lines: Vec<String>) -> Element<'a, Message> {
-    let mut content = column![text(title).size(20)].spacing(6);
+    let mut content = column![text(title).size(21).color(components::TEXT)].spacing(6);
     for line in lines {
-        content = content.push(text(line));
+        content = content.push(text(line).color(components::MUTED));
     }
-    container(content).padding(12).into()
+    container(content)
+        .padding(12)
+        .style(components::card_style())
+        .into()
 }

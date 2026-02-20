@@ -1,17 +1,22 @@
-use iced::widget::{button, column, row, text};
+use iced::widget::{button, column, container, row, text};
 use iced::{Element, Fill};
 
 use crate::app::message::Message;
 use crate::app::state::{State, Tab};
+use crate::ui::components;
 
 pub fn view(state: &State) -> Element<'_, Message> {
     let nav = column![
-        nav_button("Dashboard", Tab::Dashboard),
-        nav_button("RPC", Tab::Rpc),
-        nav_button("Config", Tab::Config),
+        text("Bitcoin RPC").size(28).color(components::TEXT),
+        text("Native desktop control plane")
+            .size(14)
+            .color(components::MUTED),
+        nav_button("Dashboard", Tab::Dashboard, state.active_tab),
+        nav_button("RPC", Tab::Rpc, state.active_tab),
+        nav_button("Config", Tab::Config, state.active_tab),
     ]
     .spacing(12)
-    .padding(16)
+    .padding(20)
     .width(180);
 
     let content = match state.active_tab {
@@ -20,16 +25,29 @@ pub fn view(state: &State) -> Element<'_, Message> {
         Tab::Config => crate::ui::config::view(state),
     };
 
-    row![nav, content]
-        .spacing(8)
+    container(
+        row![
+            container(nav)
+                .style(components::panel_style())
+                .width(230)
+                .height(Fill),
+            content
+        ]
+        .spacing(10)
         .height(Fill)
-        .width(Fill)
-        .into()
+        .width(Fill),
+    )
+    .style(components::app_surface())
+    .padding(14)
+    .height(Fill)
+    .width(Fill)
+    .into()
 }
 
-fn nav_button(label: &'static str, tab: Tab) -> Element<'static, Message> {
+fn nav_button(label: &'static str, tab: Tab, active_tab: Tab) -> Element<'static, Message> {
     button(text(label))
         .width(Fill)
+        .style(components::nav_button_style(tab == active_tab))
         .on_press(Message::SelectTab(tab))
         .into()
 }
