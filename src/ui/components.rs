@@ -282,41 +282,23 @@ pub fn row_button_style(
     selected: bool,
 ) -> impl Fn(&Theme, button::Status) -> button::Style + 'static {
     let blue = colors.blue;
-    let border_focus = colors.border_focus;
     let accent = colors.accent;
     let fg = colors.fg;
     move |_theme, status| {
-        let (base, border, border_width, text_color) = if selected {
-            (with_alpha(blue, 0.16), border_focus, 1.0, accent)
-        } else {
-            (Color::TRANSPARENT, Color::TRANSPARENT, 0.0, fg)
-        };
+        let text_color = if selected { accent } else { fg };
 
         let background = match status {
-            button::Status::Hovered => {
-                if selected {
-                    with_alpha(blue, 0.22)
-                } else {
-                    with_alpha(blue, 0.10)
-                }
-            }
-            button::Status::Pressed => {
-                if selected {
-                    with_alpha(blue, 0.28)
-                } else {
-                    with_alpha(blue, 0.14)
-                }
-            }
-            button::Status::Disabled => with_alpha(base, 0.6),
-            _ => base,
+            button::Status::Hovered => with_alpha(blue, 0.10),
+            button::Status::Pressed => with_alpha(blue, 0.16),
+            _ => Color::TRANSPARENT,
         };
 
         button::Style {
             background: Some(Background::Color(background)),
             border: Border {
                 radius: 0.0.into(),
-                width: border_width,
-                color: border,
+                width: 0.0,
+                color: Color::TRANSPARENT,
             },
             text_color,
             shadow: Shadow::default(),
@@ -328,28 +310,24 @@ pub fn utility_button_style(
     colors: &ColorTheme,
     active: bool,
 ) -> impl Fn(&Theme, button::Status) -> button::Style + 'static {
-    let bg2 = colors.bg2;
-    let bg3 = colors.bg3;
+    let purple = colors.purple;
     let border = colors.border;
-    let border_focus = colors.border_focus;
     let accent = colors.accent;
     let fg_dim = colors.fg_dim;
     move |_theme, status| {
-        let edge = if active { border_focus } else { border };
         let text_color = if active { accent } else { fg_dim };
         let background = match status {
-            button::Status::Hovered => bg3,
-            button::Status::Pressed => darken(bg2, 0.02),
-            button::Status::Disabled => with_alpha(bg2, 0.4),
-            _ => bg2,
+            button::Status::Hovered => with_alpha(purple, 0.12),
+            button::Status::Pressed => with_alpha(purple, 0.18),
+            _ => Color::TRANSPARENT,
         };
 
         button::Style {
             background: Some(Background::Color(background)),
             border: Border {
                 radius: 0.0.into(),
-                width: 1.0,
-                color: edge,
+                width: if active { 1.0 } else { 0.0 },
+                color: if active { border } else { Color::TRANSPARENT },
             },
             text_color,
             shadow: Shadow::default(),
