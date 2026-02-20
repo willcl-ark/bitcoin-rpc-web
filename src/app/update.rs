@@ -1,9 +1,10 @@
 use iced::Task;
+use iced::widget::text_input;
 use serde_json::Value;
 use std::time::{Duration, Instant};
 
-use crate::app::message::Message;
-use crate::app::state::{ConfigForm, DashboardPartialSet, State, ZmqUiEvent};
+use crate::app::message::{KeyboardShortcut, Message};
+use crate::app::state::{ConfigForm, DashboardPartialSet, FocusField, State, Tab, ZmqUiEvent};
 use crate::core::config_store::ConfigStore;
 use crate::core::dashboard_service::{DashboardPartialUpdate, DashboardService, DashboardSnapshot};
 use crate::core::rpc_client::{
@@ -26,8 +27,10 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
             state.sidebar_visible = !state.sidebar_visible;
             Task::none()
         }
+        Message::KeyboardShortcut(shortcut) => handle_keyboard_shortcut(state, shortcut),
         Message::SelectTab(tab) => {
             state.active_tab = tab;
+            state.focused_input = None;
             Task::none()
         }
 
@@ -80,34 +83,42 @@ fn handle_config(state: &mut State, message: Message) -> Task<Message> {
     match message {
         Message::ConfigUrlChanged(value) => {
             state.config.form.url = value;
+            state.focused_input = Some(FocusField::ConfigUrl);
             clear_form_feedback(state);
         }
         Message::ConfigUserChanged(value) => {
             state.config.form.user = value;
+            state.focused_input = Some(FocusField::ConfigUser);
             clear_form_feedback(state);
         }
         Message::ConfigPasswordChanged(value) => {
             state.config.form.password = value;
+            state.focused_input = Some(FocusField::ConfigPassword);
             clear_form_feedback(state);
         }
         Message::ConfigWalletChanged(value) => {
             state.config.form.wallet = value;
+            state.focused_input = Some(FocusField::ConfigWallet);
             clear_form_feedback(state);
         }
         Message::ConfigPollIntervalChanged(value) => {
             state.config.form.poll_interval_secs = value;
+            state.focused_input = Some(FocusField::ConfigPollInterval);
             clear_form_feedback(state);
         }
         Message::ConfigZmqAddressChanged(value) => {
             state.config.form.zmq_address = value;
+            state.focused_input = Some(FocusField::ConfigZmqAddress);
             clear_form_feedback(state);
         }
         Message::ConfigZmqBufferLimitChanged(value) => {
             state.config.form.zmq_buffer_limit = value;
+            state.focused_input = Some(FocusField::ConfigZmqBufferLimit);
             clear_form_feedback(state);
         }
         Message::ConfigFontSizeChanged(value) => {
             state.config.form.font_size = value;
+            state.focused_input = Some(FocusField::ConfigFontSize);
             clear_form_feedback(state);
         }
         Message::ConfigConnectPressed => {
@@ -239,6 +250,7 @@ fn handle_rpc(state: &mut State, message: Message) -> Task<Message> {
     match message {
         Message::RpcSearchChanged(value) => {
             state.rpc.search = value;
+            state.focused_input = Some(FocusField::RpcSearch);
         }
         Message::RpcCategoryToggled(category) => {
             if !state.rpc.collapsed_categories.remove(&category) {
@@ -251,14 +263,17 @@ fn handle_rpc(state: &mut State, message: Message) -> Task<Message> {
         }
         Message::RpcParamsChanged(value) => {
             state.rpc.params_input = value;
+            state.focused_input = Some(FocusField::RpcParams);
             state.rpc.error = None;
         }
         Message::RpcBatchModeToggled(enabled) => {
             state.rpc.batch_mode = enabled;
+            state.focused_input = None;
             state.rpc.error = None;
         }
         Message::RpcBatchChanged(value) => {
             state.rpc.batch_input = value;
+            state.focused_input = Some(FocusField::RpcBatch);
             state.rpc.error = None;
         }
         Message::RpcExecutePressed => {
@@ -310,6 +325,90 @@ fn handle_rpc(state: &mut State, message: Message) -> Task<Message> {
     }
 
     Task::none()
+}
+
+fn handle_keyboard_shortcut(state: &mut State, shortcut: KeyboardShortcut) -> Task<Message> {
+    match shortcut {
+        KeyboardShortcut::ToggleHelp => {
+            state.shortcuts_visible = !state.shortcuts_visible;
+            Task::none()
+        }
+        KeyboardShortcut::CloseHelp => {
+            state.shortcuts_visible = false;
+            Task::none()
+        }
+        KeyboardShortcut::SwitchToDashboard => {
+            state.active_tab = Tab::Dashboard;
+            state.focused_input = None;
+            Task::none()
+        }
+        KeyboardShortcut::SwitchToRpc => {
+            state.active_tab = Tab::Rpc;
+            state.focused_input = None;
+            Task::none()
+        }
+        KeyboardShortcut::SwitchToConfig => {
+            state.active_tab = Tab::Config;
+            state.focused_input = None;
+            Task::none()
+        }
+        KeyboardShortcut::FocusNextInput => focus_input(state, false),
+        KeyboardShortcut::FocusPrevInput => focus_input(state, true),
+        KeyboardShortcut::ExecuteRpc => {
+            if state.active_tab == Tab::Rpc && !state.rpc.execute_in_flight {
+                handle_rpc(state, Message::RpcExecutePressed)
+            } else {
+                Task::none()
+            }
+        }
+    }
+}
+
+fn focus_input(state: &mut State, reverse: bool) -> Task<Message> {
+    let order: &[FocusField] = match state.active_tab {
+        Tab::Rpc => {
+            if state.rpc.batch_mode {
+                &[FocusField::RpcSearch, FocusField::RpcBatch]
+            } else {
+                &[FocusField::RpcSearch, FocusField::RpcParams]
+            }
+        }
+        Tab::Config => &[
+            FocusField::ConfigUrl,
+            FocusField::ConfigUser,
+            FocusField::ConfigPassword,
+            FocusField::ConfigWallet,
+            FocusField::ConfigPollInterval,
+            FocusField::ConfigZmqAddress,
+            FocusField::ConfigZmqBufferLimit,
+            FocusField::ConfigFontSize,
+        ],
+        Tab::Dashboard => &[],
+    };
+
+    if order.is_empty() {
+        return Task::none();
+    }
+
+    let current_index = state
+        .focused_input
+        .and_then(|current| order.iter().position(|field| *field == current));
+
+    let next_index = match (current_index, reverse) {
+        (Some(i), false) => (i + 1) % order.len(),
+        (Some(i), true) => (i + order.len() - 1) % order.len(),
+        (None, false) => 0,
+        (None, true) => order.len() - 1,
+    };
+
+    let next = order[next_index];
+    state.focused_input = Some(next);
+
+    let id = next.id();
+    Task::batch([
+        text_input::focus(id.clone()),
+        text_input::move_cursor_to_end(id),
+    ])
 }
 
 fn handle_dashboard(state: &mut State, message: Message) -> Task<Message> {

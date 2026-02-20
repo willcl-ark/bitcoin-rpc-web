@@ -3,10 +3,23 @@ use crate::core::dashboard_service::{DashboardPartialUpdate, DashboardSnapshot};
 use crate::core::rpc_client::RpcConfig;
 use iced::widget::pane_grid;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyboardShortcut {
+    ToggleHelp,
+    CloseHelp,
+    SwitchToDashboard,
+    SwitchToRpc,
+    SwitchToConfig,
+    FocusNextInput,
+    FocusPrevInput,
+    ExecuteRpc,
+}
+
 #[derive(Debug, Clone)]
 pub enum Message {
     ThemeChanged(ThemeName),
     SidebarTogglePressed,
+    KeyboardShortcut(KeyboardShortcut),
     SelectTab(Tab),
     ConfigUrlChanged(String),
     ConfigUserChanged(String),

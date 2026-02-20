@@ -2,7 +2,7 @@ use iced::widget::{button, column, container, row, text, text_input};
 use iced::{Element, Fill};
 
 use crate::app::message::Message;
-use crate::app::state::State;
+use crate::app::state::{FocusField, State};
 use crate::ui::components;
 
 pub fn view(state: &State) -> Element<'_, Message> {
@@ -42,42 +42,50 @@ pub fn view(state: &State) -> Element<'_, Message> {
             .color(colors.fg_dim),
         text("RPC URL").size(fs),
         text_input("http://127.0.0.1:8332", &form.url)
+            .id(FocusField::ConfigUrl.id())
             .on_input(Message::ConfigUrlChanged)
             .padding(8)
             .style(components::input_style(colors)),
         text("RPC User").size(fs),
         text_input("rpcuser", &form.user)
+            .id(FocusField::ConfigUser.id())
             .on_input(Message::ConfigUserChanged)
             .padding(8)
             .style(components::input_style(colors)),
         text("RPC Password").size(fs),
         text_input("rpcpassword", &form.password)
+            .id(FocusField::ConfigPassword.id())
             .on_input(Message::ConfigPasswordChanged)
             .secure(true)
             .padding(8)
             .style(components::input_style(colors)),
         text("Wallet (optional)").size(fs),
         text_input("wallet name", &form.wallet)
+            .id(FocusField::ConfigWallet.id())
             .on_input(Message::ConfigWalletChanged)
             .padding(8)
             .style(components::input_style(colors)),
         text("Poll Interval (seconds)").size(fs),
         text_input("5", &form.poll_interval_secs)
+            .id(FocusField::ConfigPollInterval.id())
             .on_input(Message::ConfigPollIntervalChanged)
             .padding(8)
             .style(components::input_style(colors)),
         text("ZMQ Address (optional)").size(fs),
         text_input("tcp://127.0.0.1:28332", &form.zmq_address)
+            .id(FocusField::ConfigZmqAddress.id())
             .on_input(Message::ConfigZmqAddressChanged)
             .padding(8)
             .style(components::input_style(colors)),
         text("ZMQ Buffer Limit").size(fs),
         text_input("5000", &form.zmq_buffer_limit)
+            .id(FocusField::ConfigZmqBufferLimit.id())
             .on_input(Message::ConfigZmqBufferLimitChanged)
             .padding(8)
             .style(components::input_style(colors)),
         text("Font Size").size(fs),
         text_input("14", &form.font_size)
+            .id(FocusField::ConfigFontSize.id())
             .on_input(Message::ConfigFontSizeChanged)
             .padding(8)
             .style(components::input_style(colors)),

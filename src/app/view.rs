@@ -1,5 +1,5 @@
-use iced::widget::{button, column, container, row, text};
-use iced::{Element, Fill};
+use iced::widget::{button, column, container, row, stack, text};
+use iced::{Background, Border, Color, Element, Fill, Shadow, Theme};
 
 use crate::app::message::Message;
 use crate::app::state::{State, Tab, ThemeName};
@@ -70,12 +70,21 @@ pub fn view(state: &State) -> Element<'_, Message> {
         row![content].height(Fill).width(Fill)
     };
 
-    container(column![main_area, crate::ui::music_bar::view(state)].width(Fill))
+    let base = container(column![main_area, crate::ui::music_bar::view(state)].width(Fill))
         .style(components::app_surface(colors))
         .padding(10)
         .height(Fill)
-        .width(Fill)
+        .width(Fill);
+
+    if state.shortcuts_visible {
+        stack![
+            base,
+            shortcuts_overlay(state)
+        ]
         .into()
+    } else {
+        base.into()
+    }
 }
 
 fn nav_button(
@@ -90,5 +99,43 @@ fn nav_button(
         .style(components::nav_button_style(colors, tab == active_tab))
         .padding([6, 8])
         .on_press(Message::SelectTab(tab))
+        .into()
+}
+
+fn shortcuts_overlay(state: &State) -> Element<'_, Message> {
+    let fs = state.config.runtime.font_size;
+    let colors = &state.colors;
+    let panel = container(
+        column![
+            text("SHORTCUTS").size(fs + 6).color(colors.accent),
+            text("?  toggle shortcuts").size(fs).color(colors.fg),
+            text("d  dashboard").size(fs).color(colors.fg),
+            text("r  rpc").size(fs).color(colors.fg),
+            text("c  config").size(fs).color(colors.fg),
+            text("tab  next input").size(fs).color(colors.fg),
+            text("shift+tab  previous input").size(fs).color(colors.fg),
+            text("enter  execute rpc (rpc tab)").size(fs).color(colors.fg),
+            text("esc  close shortcuts").size(fs).color(colors.fg_dim),
+        ]
+        .spacing(6),
+    )
+    .padding(16)
+    .width(360)
+    .style(components::panel_style(colors));
+
+    container(panel)
+        .width(Fill)
+        .height(Fill)
+        .align_x(iced::alignment::Horizontal::Center)
+        .align_y(iced::alignment::Vertical::Center)
+        .style(move |_theme: &Theme| iced::widget::container::Style {
+            background: Some(Background::Color(Color {
+                a: 0.55,
+                ..colors.bg
+            })),
+            border: Border::default(),
+            text_color: None,
+            shadow: Shadow::default(),
+        })
         .into()
 }

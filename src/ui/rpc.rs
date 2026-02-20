@@ -4,7 +4,7 @@ use iced::widget::{button, checkbox, column, container, row, scrollable, text, t
 use iced::{Element, Fill};
 
 use crate::app::message::Message;
-use crate::app::state::State;
+use crate::app::state::{FocusField, State};
 use crate::ui::components;
 
 pub fn view(state: &State) -> Element<'_, Message> {
@@ -97,7 +97,9 @@ pub fn view(state: &State) -> Element<'_, Message> {
             .size(fs.saturating_sub(2))
             .color(colors.fg_dim),
         text_input("Search methods", &state.rpc.search)
+            .id(FocusField::RpcSearch.id())
             .on_input(Message::RpcSearchChanged)
+            .on_submit(Message::RpcExecutePressed)
             .padding(8)
             .style(components::input_style(colors)),
         text(format!(
@@ -118,14 +120,18 @@ pub fn view(state: &State) -> Element<'_, Message> {
                 r#"[{"method":"getblockchaininfo","params":[]}]"#,
                 &state.rpc.batch_input,
             )
+            .id(FocusField::RpcBatch.id())
             .on_input(Message::RpcBatchChanged)
+            .on_submit(Message::RpcExecutePressed)
             .padding(8)
             .style(components::input_style(colors)),
         );
     } else {
         right = right.push(text("Params JSON").size(fs)).push(
             text_input("[]", &state.rpc.params_input)
+                .id(FocusField::RpcParams.id())
                 .on_input(Message::RpcParamsChanged)
+                .on_submit(Message::RpcExecutePressed)
                 .padding(8)
                 .style(components::input_style(colors)),
         );

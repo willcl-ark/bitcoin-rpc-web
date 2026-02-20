@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::Instant;
 
-use iced::widget::pane_grid;
+use iced::widget::{pane_grid, text_input};
 
 use crate::core::config_store::ConfigStore;
 use crate::ui::components::ColorTheme;
@@ -88,6 +88,39 @@ pub enum PeerSortField {
 pub enum DashboardPane {
     Main,
     Zmq,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FocusField {
+    RpcSearch,
+    RpcParams,
+    RpcBatch,
+    ConfigUrl,
+    ConfigUser,
+    ConfigPassword,
+    ConfigWallet,
+    ConfigPollInterval,
+    ConfigZmqAddress,
+    ConfigZmqBufferLimit,
+    ConfigFontSize,
+}
+
+impl FocusField {
+    pub fn id(self) -> text_input::Id {
+        text_input::Id::new(match self {
+            Self::RpcSearch => "rpc.search",
+            Self::RpcParams => "rpc.params",
+            Self::RpcBatch => "rpc.batch",
+            Self::ConfigUrl => "config.url",
+            Self::ConfigUser => "config.user",
+            Self::ConfigPassword => "config.password",
+            Self::ConfigWallet => "config.wallet",
+            Self::ConfigPollInterval => "config.poll_interval",
+            Self::ConfigZmqAddress => "config.zmq_address",
+            Self::ConfigZmqBufferLimit => "config.zmq_buffer_limit",
+            Self::ConfigFontSize => "config.font_size",
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -178,6 +211,8 @@ pub struct State {
     pub colors: ColorTheme,
     pub theme_name: ThemeName,
     pub sidebar_visible: bool,
+    pub shortcuts_visible: bool,
+    pub focused_input: Option<FocusField>,
     pub active_tab: Tab,
     pub config: ConfigState,
     pub rpc: RpcState,
@@ -242,6 +277,8 @@ impl State {
             colors: ColorTheme::default(),
             theme_name: ThemeName::default(),
             sidebar_visible: true,
+            shortcuts_visible: false,
+            focused_input: None,
             active_tab: Tab::default(),
             config: ConfigState {
                 store: config_store,
