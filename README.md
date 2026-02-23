@@ -1,22 +1,25 @@
 # bitcoin-rpc-web
 
-A lightweight desktop GUI for interacting with Bitcoin Core's JSON-RPC interface. Built with [wry](https://github.com/nicoreeves/nicoreeves.github.io) (WebView) and a vanilla HTML/JS frontend.
+A lightweight desktop GUI for interacting with Bitcoin Core's JSON-RPC interface. Built with [iced](https://github.com/iced-rs/iced).
 
 ![Dashboard](dashboard.png)
 
 ## Features
 
 - Browse all RPC methods from Bitcoin Core's OpenRPC schema, grouped by category
-  - This is currently baked in for ~ v30.99 functionality, based on [this branch](https://github.com/bitcoin/bitcoin/compare/master...willcl-ark:bitcoin:json-rpc-schema)
-- Fill in parameters with type-aware form fields and execute calls
-- Multi-wallet support with a wallet selector dropdown
-- Collapsible config panel with optional password persistence
+  - Baked-in schema for ~v30.99 functionality, based on [this branch](https://github.com/bitcoin/bitcoin/compare/master...willcl-ark:bitcoin:json-rpc-schema)
+- Fill in parameters and execute calls, with batch mode support
+- Multi-wallet support
+- Config panel with persistent settings (RPC URL, credentials, wallet, ZMQ, poll interval, font size)
 - Live dashboard with blockchain, mempool, network, traffic, and peer cards
-  - Clickable peer rows with full `getpeerinfo` detail view
-  - Color-coded peer direction (green outbound, orange inbound)
-- Live ZMQ event feed showing `hashblock` and `hashtx` notifications with hue-mapped hex byte coloring
+  - Sortable, clickable peer table with full `getpeerinfo` detail view
+  - Resizable pane grid layout
+- Live ZMQ event feed showing `hashblock` and `hashtx` notifications
+- 6 color themes (Mission Control, Everforest, Gruvbox Material, Material Deep Ocean, Nord, One Dark)
+- Keyboard shortcuts (`?` for help overlay, `d`/`r`/`c` to switch tabs)
+- Configurable font size and poll interval
 - RPC address validation — blocks non-local RPC connections by default (see [Remote RPC](#remote-rpc))
-- Built-in tracker music player for extra fun while crafting transactions
+- Built-in music player (feature-gated) for vibing while constructing transactions
 
 ## Usage
 
@@ -27,11 +30,6 @@ nix run
 ```
 
 ### With Cargo
-
-Requires system dependencies for WebView:
-
-- **Linux:** GTK 3, WebKitGTK 4.1, libsoup 3
-- **macOS:** No extra dependencies
 
 ```
 cargo run --release
@@ -54,11 +52,11 @@ With audio enabled (default), Linux additionally needs ALSA development librarie
 To enable the live ZMQ event feed, Bitcoin Core must be started with ZMQ notification endpoints. Add the following to `bitcoin.conf`:
 
 ```
-zmqpubhashblock=tcp://0.0.0.0:29000
-zmqpubhashtx=tcp://0.0.0.0:29000
+zmqpubhashblock=tcp://127.0.0.1:29000
+zmqpubhashtx=tcp://127.0.0.1:29000
 ```
 
-Use `127.0.0.1` instead of `0.0.0.0` if you only need local access. Then enter the ZMQ address (e.g. `tcp://127.0.0.1:29000`) in the config panel and press Connect. The ZMQ Events card will appear on the dashboard once messages arrive.
+Then enter the ZMQ address (e.g. `tcp://127.0.0.1:29000`) in the config panel and press Connect. The ZMQ Events card will appear on the dashboard once messages arrive.
 
 Enable debug logging to stdout with:
 
@@ -68,9 +66,11 @@ RUST_LOG=bitcoin_rpc_web=debug cargo run --release
 
 ### Remote RPC
 
-RPC credentials are sent via HTTP Basic Auth in the clear. By default, the app only allows connections to local and private network addresses (localhost, `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, and `100.64.0.0/10` for WireGuard/Tailscale). Attempting to connect to a public IP will be blocked with an error message.
-
-If you're connecting to a remote node over a trusted tunnel or don't have funds at risk, you can bypass this check:
+> [!CAUTION]
+>
+> RPC credentials are sent via HTTP Basic Auth in the clear. By default, the app only allows connections to local and private network addresses (localhost, `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, and `100.64.0.0/10` for WireGuard/Tailscale). Attempting to connect to a public IP will be blocked with an error message.
+>
+> If you're connecting to a remote node over a trusted tunnel or don't have funds at risk, you can bypass this check:
 
 ```
 DANGER_INSECURE_RPC=1 cargo run --release
